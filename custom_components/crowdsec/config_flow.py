@@ -12,6 +12,11 @@ from homeassistant.config_entries import ConfigFlow, ConfigFlowResult, OptionsFl
 from homeassistant.const import CONF_NAME, CONF_SCAN_INTERVAL, CONF_VERIFY_SSL
 from homeassistant.core import callback
 from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers.selector import (
+    TextSelector,
+    TextSelectorConfig,
+    TextSelectorType,
+)
 
 from . import build_client
 from .api import (
@@ -40,6 +45,10 @@ from .const import (
 
 _LOGGER = logging.getLogger(__name__)
 
+# Echtes Passwortfeld: verdeckt die Eingabe und hält die Autovervollständigung
+# des Browsers von einem einfachen Textfeld fern.
+SECRET_SELECTOR = TextSelector(TextSelectorConfig(type=TextSelectorType.PASSWORD))
+
 STEP_USER_SCHEMA = vol.Schema(
     {
         vol.Required(CONF_NAME, default=DEFAULT_NAME): cv.string,
@@ -48,8 +57,8 @@ STEP_USER_SCHEMA = vol.Schema(
         ): cv.string,
         vol.Required(CONF_LAPI_URL, default=f"http://localhost:{DEFAULT_LAPI_PORT}"): cv.string,
         vol.Required(CONF_MACHINE_ID): cv.string,
-        vol.Required(CONF_MACHINE_PASSWORD): cv.string,
-        vol.Optional(CONF_BOUNCER_API_KEY): cv.string,
+        vol.Required(CONF_MACHINE_PASSWORD): SECRET_SELECTOR,
+        vol.Optional(CONF_BOUNCER_API_KEY): SECRET_SELECTOR,
         vol.Required(CONF_VERIFY_SSL, default=True): cv.boolean,
     }
 )
@@ -120,10 +129,18 @@ class CrowdSecConfigFlow(ConfigFlow, domain=DOMAIN):
                 )
             errors["base"], detail = result
 
+        # Geheimnisse bewusst nicht vorbefüllen: Sonst schickt ein erneutes
+        # Absenden unsichtbar denselben falschen Wert noch einmal.
+        suggested = {
+            key: value
+            for key, value in (user_input or {}).items()
+            if key not in (CONF_MACHINE_PASSWORD, CONF_BOUNCER_API_KEY)
+        }
+
         return self.async_show_form(
             step_id="user",
             data_schema=self.add_suggested_values_to_schema(
-                STEP_USER_SCHEMA, user_input or {}
+                STEP_USER_SCHEMA, suggested
             ),
             errors=errors,
             description_placeholders={"error_detail": detail},
@@ -159,8 +176,8 @@ class CrowdSecConfigFlow(ConfigFlow, domain=DOMAIN):
                         CONF_MACHINE_ID,
                         default=self._reauth_data.get(CONF_MACHINE_ID, ""),
                     ): cv.string,
-                    vol.Required(CONF_MACHINE_PASSWORD): cv.string,
-                    vol.Optional(CONF_BOUNCER_API_KEY): cv.string,
+                    vol.Required(CONF_MACHINE_PASSWORD): SECRET_SELECTOR,
+                    vol.Optional(CONF_BOUNCER_API_KEY): SECRET_SELECTOR,
                 }
             ),
             errors=errors,

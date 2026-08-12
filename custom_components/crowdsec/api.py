@@ -155,10 +155,14 @@ class CrowdSecClient:
                     timeout=self._timeout,
                 ) as response:
                     body = await response.text()
+                    # Passwortlänge statt Passwort: verrät bei Tippfehlern und
+                    # Autofill genug, ohne das Geheimnis ins Log zu schreiben.
                     _LOGGER.debug(
-                        "LAPI-Login an %s für machine_id %r: HTTP %s, %d Byte Antwort",
+                        "LAPI-Login an %s für machine_id %r (Passwort: %d Zeichen): "
+                        "HTTP %s, %d Byte Antwort",
                         url,
                         self._machine_id,
+                        len(self._machine_password),
                         response.status,
                         len(body),
                     )
