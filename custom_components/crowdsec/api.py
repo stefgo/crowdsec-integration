@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import logging
 from datetime import datetime, timedelta, timezone
@@ -46,6 +47,11 @@ class CrowdSecAuthError(CrowdSecError):
     def __init__(self, message: str, endpoint: str = ENDPOINT_LAPI) -> None:
         super().__init__(message)
         self.endpoint = endpoint
+
+
+def _fingerprint(secret: str) -> str:
+    """Gekürzter SHA-256 eines Geheimnisses für den Soll-Ist-Vergleich im Log."""
+    return hashlib.sha256(secret.encode("utf-8")).hexdigest()[:8]
 
 
 def _parse_expiry(raw: Any) -> datetime | None:
@@ -155,14 +161,16 @@ class CrowdSecClient:
                     timeout=self._timeout,
                 ) as response:
                     body = await response.text()
-                    # Passwortlänge statt Passwort: verrät bei Tippfehlern und
-                    # Autofill genug, ohne das Geheimnis ins Log zu schreiben.
+                    # Länge und gekürzter Hash statt Passwort: genug, um einen
+                    # Tippfehler gegen den Sollwert zu prüfen, aber nicht
+                    # umkehrbar.
                     _LOGGER.debug(
-                        "LAPI-Login an %s für machine_id %r (Passwort: %d Zeichen): "
-                        "HTTP %s, %d Byte Antwort",
+                        "LAPI-Login an %s für machine_id %r "
+                        "(Passwort: %d Zeichen, sha256 %s): HTTP %s, %d Byte Antwort",
                         url,
                         self._machine_id,
                         len(self._machine_password),
+                        _fingerprint(self._machine_password),
                         response.status,
                         len(body),
                     )
