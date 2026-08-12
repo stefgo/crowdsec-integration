@@ -15,7 +15,12 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
-from .api import CrowdSecAuthError, CrowdSecClient, CrowdSecConnectionError
+from .api import (
+    ENDPOINT_LAPI,
+    CrowdSecAuthError,
+    CrowdSecClient,
+    CrowdSecConnectionError,
+)
 from .const import (
     ALERTS_LIMIT,
     CONF_BOUNCER_IDLE_INTERVALS,
@@ -132,17 +137,23 @@ class CrowdSecCoordinator(DataUpdateCoordinator[CrowdSecData]):
         try:
             metrics = await self.client.async_get_metrics()
         except CrowdSecAuthError as err:
-            raise ConfigEntryAuthFailed(str(err)) from err
+            self._handle_auth_error(data, err)
         except CrowdSecConnectionError as err:
             data.errors.append(str(err))
 
         alerts: list[dict[str, Any]] | None = None
-        decision_count: int | None = None
         try:
             alerts = await self.client.async_get_alerts()
+        except CrowdSecAuthError as err:
+            self._handle_auth_error(data, err)
+        except CrowdSecConnectionError as err:
+            data.errors.append(str(err))
+
+        decision_count: int | None = None
+        try:
             decision_count = await self.client.async_get_active_decision_count()
         except CrowdSecAuthError as err:
-            raise ConfigEntryAuthFailed(str(err)) from err
+            self._handle_auth_error(data, err)
         except CrowdSecConnectionError as err:
             data.errors.append(str(err))
 
@@ -173,6 +184,19 @@ class CrowdSecCoordinator(DataUpdateCoordinator[CrowdSecData]):
 
         self._evaluate_problem(data)
         return data
+
+    def _handle_auth_error(self, data: CrowdSecData, err: CrowdSecAuthError) -> None:
+        """Entscheide, ob ein Zugriffsfehler den Eintrag blockieren muss.
+
+        Nur ein abgelehnter Login heißt „falsche Zugangsdaten" und rechtfertigt
+        einen Reauth-Dialog. Verweigert eine einzelne Route trotz gültigem
+        Token, laufen die übrigen Entitäten weiter — der Ausfall steht in der
+        Störung.
+        """
+        if err.endpoint == ENDPOINT_LAPI:
+            raise ConfigEntryAuthFailed(str(err)) from err
+        _LOGGER.warning("Zugriff auf %s verweigert: %s", err.endpoint, err)
+        data.errors.append(str(err))
 
     # -- Auswertung -------------------------------------------------------
 

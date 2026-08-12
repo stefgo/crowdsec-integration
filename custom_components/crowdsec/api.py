@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -18,9 +19,12 @@ _LOGGER = logging.getLogger(__name__)
 TOKEN_REFRESH_MARGIN = timedelta(minutes=2)
 TOKEN_FALLBACK_TTL = timedelta(minutes=50)
 
-# Die drei unabhängigen Zugänge einer Instanz.
+# Die Zugänge einer Instanz. Nur ENDPOINT_LAPI — der Login selbst — bedeutet
+# falsche Zugangsdaten; die übrigen dürfen einzeln ausfallen, ohne die
+# Integration lahmzulegen.
 ENDPOINT_METRICS = "metrics"
 ENDPOINT_LAPI = "lapi"
+ENDPOINT_ALERTS = "alerts"
 ENDPOINT_BOUNCER = "bouncer"
 
 
@@ -76,8 +80,15 @@ class CrowdSecClient:
         self._session = session
         self._metrics_url = metrics_url.rstrip("/")
         self._lapi_url = lapi_url.rstrip("/")
-        self._machine_id = machine_id
+        # Beim Kopieren aus der cscli-Ausgabe rutscht leicht Leerraum mit. Die
+        # ID hat nie welchen, beim Passwort wird nur gewarnt statt korrigiert.
+        self._machine_id = machine_id.strip()
         self._machine_password = machine_password
+        if machine_password != machine_password.strip():
+            _LOGGER.warning(
+                "Das Machine-Passwort beginnt oder endet mit Leerraum — beim "
+                "Kopieren mit übernommen?"
+            )
         self._bouncer_api_key = bouncer_api_key or None
         self._ssl: bool | None = None if verify_ssl else False
         self._timeout = aiohttp.ClientTimeout(total=timeout)
@@ -135,22 +146,40 @@ class CrowdSecClient:
                 "machine_id": self._machine_id,
                 "password": self._machine_password,
             }
+            url = f"{self._lapi_url}/v1/watchers/login"
             try:
                 async with self._session.post(
-                    f"{self._lapi_url}/v1/watchers/login",
+                    url,
                     json=payload,
                     ssl=self._ssl,
                     timeout=self._timeout,
                 ) as response:
+                    body = await response.text()
+                    _LOGGER.debug(
+                        "LAPI-Login an %s für machine_id %r: HTTP %s, %d Byte Antwort",
+                        url,
+                        self._machine_id,
+                        response.status,
+                        len(body),
+                    )
                     if response.status in (401, 403):
                         raise CrowdSecAuthError(
-                            "Machine-Zugangsdaten wurden abgelehnt", ENDPOINT_LAPI
+                            f"LAPI wies den Login ab (HTTP {response.status}): "
+                            f"{body.strip()[:200]}",
+                            ENDPOINT_LAPI,
                         )
                     if response.status != 200:
                         raise CrowdSecConnectionError(
-                            f"LAPI-Login antwortete mit HTTP {response.status}"
+                            f"LAPI-Login antwortete mit HTTP {response.status}: "
+                            f"{body.strip()[:200]}"
                         )
-                    data = await response.json(content_type=None)
+                    try:
+                        data = json.loads(body) if body.strip() else None
+                    except ValueError as err:
+                        raise CrowdSecConnectionError(
+                            "LAPI-Login lieferte kein JSON — antwortet dort wirklich "
+                            "CrowdSec und kein Proxy?"
+                        ) from err
             except asyncio.TimeoutError as err:
                 raise CrowdSecConnectionError("Zeitüberschreitung beim LAPI-Login") from err
             except aiohttp.ClientError as err:
@@ -158,7 +187,12 @@ class CrowdSecClient:
 
             token = (data or {}).get("token")
             if not token:
-                raise CrowdSecAuthError("LAPI-Login lieferte kein Token", ENDPOINT_LAPI)
+                # HTTP 200 ohne Token ist kein Anmeldefehler, sondern eine
+                # unerwartete Antwort — die beiden nicht vermischen.
+                raise CrowdSecConnectionError(
+                    "LAPI-Login antwortete mit 200, aber ohne Token: "
+                    f"{sorted((data or {}).keys())}"
+                )
 
             self._token = token
             self._token_expires = _parse_expiry((data or {}).get("expire")) or (
@@ -184,8 +218,11 @@ class CrowdSecClient:
                         if attempt == 0:
                             # Token evtl. serverseitig verfallen: neu anmelden.
                             continue
+                        body = await response.text()
                         raise CrowdSecAuthError(
-                            f"LAPI verweigert {path} ({response.status})", ENDPOINT_LAPI
+                            f"LAPI verweigert {path} trotz gültigem Token "
+                            f"(HTTP {response.status}): {body.strip()[:200]}",
+                            ENDPOINT_ALERTS,
                         )
                     if response.status != 200:
                         raise CrowdSecConnectionError(
@@ -199,7 +236,7 @@ class CrowdSecClient:
             except aiohttp.ClientError as err:
                 raise CrowdSecConnectionError(f"LAPI {path} fehlgeschlagen: {err}") from err
 
-        raise CrowdSecAuthError(f"LAPI verweigert {path}", ENDPOINT_LAPI)
+        raise CrowdSecAuthError(f"LAPI verweigert {path}", ENDPOINT_ALERTS)
 
     async def async_get_alerts(self, since: str = ALERTS_SINCE) -> list[dict[str, Any]]:
         """Alerts eines Zeitfensters, standardmäßig der letzten 24 Stunden."""
@@ -256,8 +293,14 @@ class CrowdSecClient:
         return len(data)
 
     async def async_validate(self) -> None:
-        """Prüfe beide Endpunkte — für den Config-Flow."""
+        """Prüfe alle Zugänge, die der Coordinator später braucht.
+
+        Auch ``/v1/alerts``: Ein erfolgreicher Login sagt nichts darüber aus,
+        ob die Alert-Route erreichbar ist — scheitert sie erst beim Setup,
+        landet man in einer Reauth-Schleife.
+        """
         await self.async_get_metrics()
         await self._async_token(force=True)
+        await self.async_get_alerts()
         if self._bouncer_api_key is not None:
             await self.async_get_active_decision_count()

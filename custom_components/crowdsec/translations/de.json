@@ -3,7 +3,7 @@
     "step": {
       "user": {
         "title": "CrowdSec-Instanz hinzufügen",
-        "description": "Home Assistant liest den Prometheus-Endpunkt und die Local API (LAPI) der Instanz. Die Machine-Zugangsdaten sind die mit `cscli machines add` angelegten.",
+        "description": "Home Assistant liest den Prometheus-Endpunkt und die Local API (LAPI) der Instanz. Die Machine-Zugangsdaten sind die mit `cscli machines add` angelegten.\n\n{error_detail}",
         "data": {
           "name": "Name",
           "metrics_url": "Metrics-URL",
@@ -21,7 +21,7 @@
       },
       "reauth_confirm": {
         "title": "CrowdSec neu anmelden",
-        "description": "Die LAPI hat die gespeicherten Zugangsdaten abgelehnt.",
+        "description": "Die LAPI hat die gespeicherten Zugangsdaten abgelehnt.\n\n{error_detail}",
         "data": {
           "machine_id": "Machine-ID",
           "machine_password": "Machine-Passwort",
@@ -33,6 +33,7 @@
       "cannot_connect": "Instanz nicht erreichbar. URLs, Port und Tunnel prüfen.",
       "invalid_auth": "Die LAPI hat die Machine-Zugangsdaten abgelehnt. Machine-ID und Passwort prüfen sowie, ob die Machine validiert ist (cscli machines list).",
       "invalid_auth_metrics": "Der Metrics-Endpunkt verweigert den Zugriff. Er ist normalerweise ohne Anmeldung erreichbar — vermutlich verlangt ein vorgelagerter Proxy oder Tunnel Zugangsdaten.",
+      "invalid_auth_alerts": "Der Login gelang, aber die LAPI verweigert die Alert-Abfrage. Details siehe unten — betroffen sind nur „Neue Bans 24h\" und „Top-Szenario 24h\".",
       "invalid_auth_bouncer": "Der Bouncer-API-Key wurde abgelehnt. Feld leer lassen, dann wird die Metrik cs_active_decisions verwendet.",
       "unknown": "Unerwarteter Fehler, siehe Protokoll."
     },

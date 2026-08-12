@@ -3,7 +3,7 @@
     "step": {
       "user": {
         "title": "Add a CrowdSec instance",
-        "description": "Home Assistant reads the Prometheus metrics endpoint and the Local API (LAPI) of the instance. Machine credentials are the ones registered with `cscli machines add`.",
+        "description": "Home Assistant reads the Prometheus metrics endpoint and the Local API (LAPI) of the instance. Machine credentials are the ones registered with `cscli machines add`.\n\n{error_detail}",
         "data": {
           "name": "Name",
           "metrics_url": "Metrics URL",
@@ -21,7 +21,7 @@
       },
       "reauth_confirm": {
         "title": "Re-authenticate CrowdSec",
-        "description": "The LAPI rejected the stored credentials.",
+        "description": "The LAPI rejected the stored credentials.\n\n{error_detail}",
         "data": {
           "machine_id": "Machine ID",
           "machine_password": "Machine password",
@@ -33,6 +33,7 @@
       "cannot_connect": "Cannot reach the instance. Check URLs, port and tunnel.",
       "invalid_auth": "The LAPI rejected the machine credentials. Check machine ID and password, and whether the machine is validated (cscli machines list).",
       "invalid_auth_metrics": "The metrics endpoint denied access. It is usually unauthenticated — a proxy or tunnel in front of it is likely asking for credentials.",
+      "invalid_auth_alerts": "The login succeeded, but the LAPI denies the alert query. See details below — only \"New bans 24h\" and \"Top scenario 24h\" are affected.",
       "invalid_auth_bouncer": "The bouncer API key was rejected. Leave the field empty to use the cs_active_decisions metric instead.",
       "unknown": "Unexpected error, see the log."
     },

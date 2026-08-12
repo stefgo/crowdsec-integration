@@ -15,6 +15,7 @@ from homeassistant.helpers import config_validation as cv
 
 from . import build_client
 from .api import (
+    ENDPOINT_ALERTS,
     ENDPOINT_BOUNCER,
     ENDPOINT_METRICS,
     CrowdSecAuthError,
@@ -64,22 +65,32 @@ def _unique_id(user_input: dict[str, Any]) -> str:
 # abgelehnt hat.
 AUTH_ERRORS = {
     ENDPOINT_METRICS: "invalid_auth_metrics",
+    ENDPOINT_ALERTS: "invalid_auth_alerts",
     ENDPOINT_BOUNCER: "invalid_auth_bouncer",
 }
 
 
-async def _async_validate(hass, user_input: dict[str, Any]) -> str | None:
-    """Verbindung testen; gibt einen Fehlerschlüssel zurück oder ``None``."""
+async def _async_validate(
+    hass, user_input: dict[str, Any]
+) -> tuple[str, str] | None:
+    """Verbindung testen.
+
+    Liefert ``(fehlerschlüssel, klartext)`` oder ``None`` bei Erfolg. Der
+    Klartext enthält Endpunkt, Statuscode und die Antwort von CrowdSec und
+    wird im Formular mit angezeigt — sonst rät man im Log herum.
+    """
     client = build_client(hass, user_input, user_input.get(CONF_VERIFY_SSL, True))
     try:
         await client.async_validate()
     except CrowdSecAuthError as err:
-        return AUTH_ERRORS.get(err.endpoint, "invalid_auth")
-    except CrowdSecConnectionError:
-        return "cannot_connect"
-    except Exception:  # noqa: BLE001 - unerwartetes soll den Flow nicht sprengen
+        _LOGGER.debug("Prüfung abgelehnt (%s): %s", err.endpoint, err)
+        return AUTH_ERRORS.get(err.endpoint, "invalid_auth"), str(err)
+    except CrowdSecConnectionError as err:
+        _LOGGER.debug("Prüfung fehlgeschlagen: %s", err)
+        return "cannot_connect", str(err)
+    except Exception as err:  # noqa: BLE001 - unerwartetes soll den Flow nicht sprengen
         _LOGGER.exception("Unerwarteter Fehler beim Prüfen der CrowdSec-Instanz")
-        return "unknown"
+        return "unknown", f"{type(err).__name__}: {err}"
     return None
 
 
@@ -96,17 +107,18 @@ class CrowdSecConfigFlow(ConfigFlow, domain=DOMAIN):
     ) -> ConfigFlowResult:
         """Erste und einzige Eingabemaske."""
         errors: dict[str, str] = {}
+        detail = ""
 
         if user_input is not None:
             await self.async_set_unique_id(_unique_id(user_input))
             self._abort_if_unique_id_configured()
 
-            error = await _async_validate(self.hass, user_input)
-            if error is None:
+            result = await _async_validate(self.hass, user_input)
+            if result is None:
                 return self.async_create_entry(
                     title=user_input[CONF_NAME], data=user_input
                 )
-            errors["base"] = error
+            errors["base"], detail = result
 
         return self.async_show_form(
             step_id="user",
@@ -114,6 +126,7 @@ class CrowdSecConfigFlow(ConfigFlow, domain=DOMAIN):
                 STEP_USER_SCHEMA, user_input or {}
             ),
             errors=errors,
+            description_placeholders={"error_detail": detail},
         )
 
     async def async_step_reauth(
@@ -128,14 +141,15 @@ class CrowdSecConfigFlow(ConfigFlow, domain=DOMAIN):
     ) -> ConfigFlowResult:
         """Neue Zugangsdaten abfragen."""
         errors: dict[str, str] = {}
+        detail = ""
         entry = self._get_reauth_entry()
 
         if user_input is not None:
             merged = {**self._reauth_data, **user_input}
-            error = await _async_validate(self.hass, merged)
-            if error is None:
+            result = await _async_validate(self.hass, merged)
+            if result is None:
                 return self.async_update_reload_and_abort(entry, data=merged)
-            errors["base"] = error
+            errors["base"], detail = result
 
         return self.async_show_form(
             step_id="reauth_confirm",
@@ -150,6 +164,7 @@ class CrowdSecConfigFlow(ConfigFlow, domain=DOMAIN):
                 }
             ),
             errors=errors,
+            description_placeholders={"error_detail": detail},
         )
 
     @staticmethod
