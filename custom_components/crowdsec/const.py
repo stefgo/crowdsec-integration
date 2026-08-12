@@ -3,6 +3,12 @@
 from __future__ import annotations
 
 DOMAIN = "crowdsec"
+INTEGRATION_VERSION = "1.0.0"
+
+# CrowdSec liest den User-Agent aus und legt ihn als Version der Machine ab.
+# Er muss dem Muster "name/version" folgen — der zusammengesetzte User-Agent
+# von Home Assistant lässt sich nicht parsen und führt zu einem 401 beim Login.
+USER_AGENT = f"hass-crowdsec/{INTEGRATION_VERSION}"
 
 # --- Konfigurationsschlüssel ---------------------------------------------
 CONF_METRICS_URL = "metrics_url"

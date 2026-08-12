@@ -126,6 +126,13 @@ Antwortet `/v1/decisions` mit **404**, ist das kein Fehler: Nicht jede
 CrowdSec-Version liefert dort ein leeres Array. Die Integration weicht in dem
 Fall automatisch auf `cs_active_decisions` aus.
 
+Meldet die LAPI beim Login `incorrect Username or Password`, obwohl dieselben
+Zugangsdaten per curl funktionieren, lohnt ein Blick auf den User-Agent:
+CrowdSec liest ihn aus, legt ihn als Version der Machine ab (`cscli machines
+list`) und erwartet das Format `name/version`. Die Integration sendet deshalb
+einen eigenen (`hass-crowdsec/…`) statt des zusammengesetzten von Home
+Assistant. Nachstellen lässt sich das mit `curl -A`.
+
 Detailliertes Protokoll:
 
 ```yaml

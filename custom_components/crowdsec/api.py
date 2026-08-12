@@ -11,7 +11,7 @@ from typing import Any
 
 import aiohttp
 
-from .const import ALERTS_LIMIT, ALERTS_SINCE, DEFAULT_TIMEOUT
+from .const import ALERTS_LIMIT, ALERTS_SINCE, DEFAULT_TIMEOUT, USER_AGENT
 from .metrics import MetricSet, parse_prometheus
 
 _LOGGER = logging.getLogger(__name__)
@@ -97,6 +97,10 @@ class CrowdSecClient:
             )
         self._bouncer_api_key = bouncer_api_key or None
         self._ssl: bool | None = None if verify_ssl else False
+        # Ohne eigenen User-Agent erbt die Anfrage den von Home Assistant, und
+        # CrowdSec lehnt den Login ab, weil er sich nicht als name/version
+        # parsen lässt.
+        self._headers = {"User-Agent": USER_AGENT}
         self._timeout = aiohttp.ClientTimeout(total=timeout)
         self._token: str | None = None
         self._token_expires: datetime | None = None
@@ -113,7 +117,10 @@ class CrowdSecClient:
         """Scrape den Prometheus-Endpunkt."""
         try:
             async with self._session.get(
-                self._metrics_url, ssl=self._ssl, timeout=self._timeout
+                self._metrics_url,
+                headers=self._headers,
+                ssl=self._ssl,
+                timeout=self._timeout,
             ) as response:
                 if response.status in (401, 403):
                     raise CrowdSecAuthError(
@@ -157,6 +164,7 @@ class CrowdSecClient:
                 async with self._session.post(
                     url,
                     json=payload,
+                    headers=self._headers,
                     ssl=self._ssl,
                     timeout=self._timeout,
                 ) as response:
@@ -222,7 +230,7 @@ class CrowdSecClient:
                 async with self._session.get(
                     f"{self._lapi_url}{path}",
                     params=params,
-                    headers={"Authorization": f"Bearer {token}"},
+                    headers={**self._headers, "Authorization": f"Bearer {token}"},
                     ssl=self._ssl,
                     timeout=self._timeout,
                 ) as response:
@@ -273,7 +281,7 @@ class CrowdSecClient:
         try:
             async with self._session.get(
                 f"{self._lapi_url}/v1/decisions",
-                headers={"X-Api-Key": self._bouncer_api_key},
+                headers={**self._headers, "X-Api-Key": self._bouncer_api_key},
                 ssl=self._ssl,
                 timeout=self._timeout,
             ) as response:
