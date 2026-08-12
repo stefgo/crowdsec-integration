@@ -1,0 +1,72 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Add a CrowdSec instance",
+        "description": "Home Assistant reads the Prometheus metrics endpoint and the Local API (LAPI) of the instance. Machine credentials are the ones registered with `cscli machines add`.",
+        "data": {
+          "name": "Name",
+          "metrics_url": "Metrics URL",
+          "lapi_url": "LAPI URL",
+          "machine_id": "Machine ID",
+          "machine_password": "Machine password",
+          "bouncer_api_key": "Bouncer API key (optional)",
+          "verify_ssl": "Verify SSL certificate"
+        },
+        "data_description": {
+          "metrics_url": "Usually http://<host>:6060/metrics",
+          "lapi_url": "Usually http://<host>:8080",
+          "bouncer_api_key": "Only needed for an exact decision count; otherwise the cs_active_decisions metric is used."
+        }
+      },
+      "reauth_confirm": {
+        "title": "Re-authenticate CrowdSec",
+        "description": "The LAPI rejected the stored credentials.",
+        "data": {
+          "machine_id": "Machine ID",
+          "machine_password": "Machine password",
+          "bouncer_api_key": "Bouncer API key (optional)"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Cannot reach the instance. Check URLs, port and tunnel.",
+      "invalid_auth": "Credentials were rejected.",
+      "unknown": "Unexpected error, see the log."
+    },
+    "abort": {
+      "already_configured": "This instance is already configured.",
+      "reauth_successful": "Re-authentication succeeded."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "CrowdSec options",
+        "data": {
+          "scan_interval": "Polling interval (seconds)",
+          "parse_error_threshold": "Parse error threshold (%)",
+          "bouncer_idle_intervals": "Intervals without bouncer queries before a problem"
+        }
+      }
+    }
+  },
+  "entity": {
+    "binary_sensor": {
+      "reachable": { "name": "Reachable" },
+      "problem": { "name": "Problem" }
+    },
+    "sensor": {
+      "scrape_duration": { "name": "Scrape duration" },
+      "last_restart": { "name": "Last restart" },
+      "last_update": { "name": "Last update" },
+      "active_decisions": { "name": "Active decisions" },
+      "new_bans_24h": { "name": "New bans 24h" },
+      "top_scenario_24h": { "name": "Top scenario 24h" },
+      "active_buckets": { "name": "Active buckets" },
+      "lines_per_minute": { "name": "Lines per minute" },
+      "parse_error_rate": { "name": "Parse error rate" },
+      "bouncer_queries_per_minute": { "name": "Bouncer queries per minute" }
+    }
+  }
+}

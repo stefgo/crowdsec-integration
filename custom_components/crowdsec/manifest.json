@@ -1,0 +1,12 @@
+{
+  "domain": "crowdsec",
+  "name": "CrowdSec",
+  "codeowners": [],
+  "config_flow": true,
+  "documentation": "https://github.com/CHANGEME/hass-crowdsec-integration",
+  "integration_type": "service",
+  "iot_class": "local_polling",
+  "issue_tracker": "https://github.com/CHANGEME/hass-crowdsec-integration/issues",
+  "requirements": [],
+  "version": "1.0.0"
+}

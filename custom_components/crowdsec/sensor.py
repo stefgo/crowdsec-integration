@@ -1,0 +1,174 @@
+"""Die Messwerte einer CrowdSec-Instanz."""
+
+from __future__ import annotations
+
+from collections.abc import Callable
+from dataclasses import dataclass
+from datetime import datetime
+from typing import Any
+
+from homeassistant.components.sensor import (
+    SensorDeviceClass,
+    SensorEntity,
+    SensorEntityDescription,
+    SensorStateClass,
+)
+from homeassistant.const import PERCENTAGE, EntityCategory, UnitOfTime
+from homeassistant.core import HomeAssistant
+from homeassistant.helpers.entity_platform import AddEntitiesCallback
+
+from .coordinator import CrowdSecConfigEntry, CrowdSecData
+from .entity import CrowdSecEntity
+
+# Zustandswerte in Home Assistant sind auf 255 Zeichen begrenzt.
+MAX_STATE_LENGTH = 255
+
+
+@dataclass(frozen=True, kw_only=True)
+class CrowdSecSensorDescription(SensorEntityDescription):
+    """Beschreibung mit Wert- und Attributfunktion."""
+
+    value_fn: Callable[[CrowdSecData], float | int | str | datetime | None]
+    attrs_fn: Callable[[CrowdSecData], dict[str, Any]] | None = None
+    # Zeitstempel bleiben auch bei einem fehlgeschlagenen Scrape gültig.
+    survives_outage: bool = False
+
+
+SENSORS: tuple[CrowdSecSensorDescription, ...] = (
+    CrowdSecSensorDescription(
+        key="scrape_duration",
+        translation_key="scrape_duration",
+        device_class=SensorDeviceClass.DURATION,
+        native_unit_of_measurement=UnitOfTime.SECONDS,
+        state_class=SensorStateClass.MEASUREMENT,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        suggested_display_precision=2,
+        survives_outage=True,
+        value_fn=lambda data: data.scrape_duration,
+    ),
+    CrowdSecSensorDescription(
+        key="last_restart",
+        translation_key="last_restart",
+        device_class=SensorDeviceClass.TIMESTAMP,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        survives_outage=True,
+        value_fn=lambda data: data.last_restart,
+    ),
+    CrowdSecSensorDescription(
+        key="last_update",
+        translation_key="last_update",
+        device_class=SensorDeviceClass.TIMESTAMP,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        survives_outage=True,
+        value_fn=lambda data: data.last_update,
+    ),
+    CrowdSecSensorDescription(
+        key="active_decisions",
+        translation_key="active_decisions",
+        icon="mdi:shield-lock",
+        state_class=SensorStateClass.MEASUREMENT,
+        value_fn=lambda data: data.active_decisions,
+        attrs_fn=lambda data: {
+            "by_reason": data.decisions_by_reason,
+            "by_action": data.decisions_by_action,
+        },
+    ),
+    CrowdSecSensorDescription(
+        key="new_bans_24h",
+        translation_key="new_bans_24h",
+        icon="mdi:gavel",
+        state_class=SensorStateClass.MEASUREMENT,
+        value_fn=lambda data: data.new_bans_24h,
+        attrs_fn=lambda data: {
+            "alerts_24h": data.alerts_24h,
+            "truncated": data.alerts_truncated,
+        },
+    ),
+    CrowdSecSensorDescription(
+        key="top_scenario_24h",
+        translation_key="top_scenario_24h",
+        icon="mdi:target",
+        value_fn=lambda data: data.top_scenario,
+        attrs_fn=lambda data: {"top_scenarios": data.top_scenarios},
+    ),
+    CrowdSecSensorDescription(
+        key="active_buckets",
+        translation_key="active_buckets",
+        icon="mdi:bucket-outline",
+        state_class=SensorStateClass.MEASUREMENT,
+        value_fn=lambda data: data.active_buckets,
+        attrs_fn=lambda data: {"by_scenario": data.buckets_by_name},
+    ),
+    CrowdSecSensorDescription(
+        key="lines_per_minute",
+        translation_key="lines_per_minute",
+        icon="mdi:file-document-multiple-outline",
+        native_unit_of_measurement="Zeilen/min",
+        state_class=SensorStateClass.MEASUREMENT,
+        suggested_display_precision=1,
+        value_fn=lambda data: data.lines_per_minute,
+    ),
+    CrowdSecSensorDescription(
+        key="parse_error_rate",
+        translation_key="parse_error_rate",
+        icon="mdi:alert-decagram-outline",
+        native_unit_of_measurement=PERCENTAGE,
+        state_class=SensorStateClass.MEASUREMENT,
+        suggested_display_precision=2,
+        value_fn=lambda data: data.parse_error_rate,
+    ),
+    CrowdSecSensorDescription(
+        key="bouncer_queries_per_minute",
+        translation_key="bouncer_queries_per_minute",
+        icon="mdi:transit-connection-variant",
+        native_unit_of_measurement="Abfragen/min",
+        state_class=SensorStateClass.MEASUREMENT,
+        suggested_display_precision=1,
+        value_fn=lambda data: data.bouncer_queries_per_minute,
+    ),
+)
+
+
+async def async_setup_entry(
+    hass: HomeAssistant,
+    entry: CrowdSecConfigEntry,
+    async_add_entities: AddEntitiesCallback,
+) -> None:
+    """Lege die Sensoren einer Instanz an."""
+    coordinator = entry.runtime_data
+    async_add_entities(
+        CrowdSecSensor(coordinator, entry, description) for description in SENSORS
+    )
+
+
+class CrowdSecSensor(CrowdSecEntity, SensorEntity):
+    """Ein einzelner Messwert."""
+
+    entity_description: CrowdSecSensorDescription
+
+    @property
+    def available(self) -> bool:
+        """Diagnosewerte bleiben verfügbar, Messwerte nicht.
+
+        Bei einem fehlgeschlagenen Scrape sollen Zähler und Raten nicht mit
+        alten Werten weiterleben — „Letzte Aktualisierung" und „Letzter
+        Neustart" dagegen schon, sie liefern genau dann den Kontext.
+        """
+        if self.coordinator.data is None:
+            return False
+        if self.entity_description.survives_outage:
+            return True
+        return self.coordinator.data.reachable
+
+    @property
+    def native_value(self) -> float | int | str | datetime | None:
+        value = self.entity_description.value_fn(self.data)
+        if isinstance(value, str) and len(value) > MAX_STATE_LENGTH:
+            return value[:MAX_STATE_LENGTH]
+        return value
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any] | None:
+        if self.entity_description.attrs_fn is None:
+            return None
+        return self.entity_description.attrs_fn(self.data)

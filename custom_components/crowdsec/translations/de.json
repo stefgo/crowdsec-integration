@@ -1,0 +1,72 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "CrowdSec-Instanz hinzufügen",
+        "description": "Home Assistant liest den Prometheus-Endpunkt und die Local API (LAPI) der Instanz. Die Machine-Zugangsdaten sind die mit `cscli machines add` angelegten.",
+        "data": {
+          "name": "Name",
+          "metrics_url": "Metrics-URL",
+          "lapi_url": "LAPI-URL",
+          "machine_id": "Machine-ID",
+          "machine_password": "Machine-Passwort",
+          "bouncer_api_key": "Bouncer-API-Key (optional)",
+          "verify_ssl": "SSL-Zertifikat prüfen"
+        },
+        "data_description": {
+          "metrics_url": "Üblicherweise http://<host>:6060/metrics",
+          "lapi_url": "Üblicherweise http://<host>:8080",
+          "bouncer_api_key": "Nur nötig für eine exakte Decision-Zahl; sonst wird die Metrik cs_active_decisions verwendet."
+        }
+      },
+      "reauth_confirm": {
+        "title": "CrowdSec neu anmelden",
+        "description": "Die LAPI hat die gespeicherten Zugangsdaten abgelehnt.",
+        "data": {
+          "machine_id": "Machine-ID",
+          "machine_password": "Machine-Passwort",
+          "bouncer_api_key": "Bouncer-API-Key (optional)"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Instanz nicht erreichbar. URLs, Port und Tunnel prüfen.",
+      "invalid_auth": "Zugangsdaten wurden abgelehnt.",
+      "unknown": "Unerwarteter Fehler, siehe Protokoll."
+    },
+    "abort": {
+      "already_configured": "Diese Instanz ist bereits eingerichtet.",
+      "reauth_successful": "Neuanmeldung erfolgreich."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "CrowdSec-Optionen",
+        "data": {
+          "scan_interval": "Abfrageintervall (Sekunden)",
+          "parse_error_threshold": "Schwellwert Parse-Fehlerquote (%)",
+          "bouncer_idle_intervals": "Intervalle ohne Bouncer-Abfragen bis zur Störung"
+        }
+      }
+    }
+  },
+  "entity": {
+    "binary_sensor": {
+      "reachable": { "name": "Erreichbar" },
+      "problem": { "name": "Störung" }
+    },
+    "sensor": {
+      "scrape_duration": { "name": "Scrape-Dauer" },
+      "last_restart": { "name": "Letzter Neustart" },
+      "last_update": { "name": "Letzte Aktualisierung" },
+      "active_decisions": { "name": "Aktive Decisions" },
+      "new_bans_24h": { "name": "Neue Bans 24h" },
+      "top_scenario_24h": { "name": "Top-Szenario 24h" },
+      "active_buckets": { "name": "Aktive Buckets" },
+      "lines_per_minute": { "name": "Zeilen/min" },
+      "parse_error_rate": { "name": "Parse-Fehlerquote" },
+      "bouncer_queries_per_minute": { "name": "Bouncer-Abfragen/min" }
+    }
+  }
+}
