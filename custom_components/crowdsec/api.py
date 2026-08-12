@@ -18,6 +18,11 @@ _LOGGER = logging.getLogger(__name__)
 TOKEN_REFRESH_MARGIN = timedelta(minutes=2)
 TOKEN_FALLBACK_TTL = timedelta(minutes=50)
 
+# Die drei unabhängigen Zugänge einer Instanz.
+ENDPOINT_METRICS = "metrics"
+ENDPOINT_LAPI = "lapi"
+ENDPOINT_BOUNCER = "bouncer"
+
 
 class CrowdSecError(Exception):
     """Basisfehler der Integration."""
@@ -28,7 +33,15 @@ class CrowdSecConnectionError(CrowdSecError):
 
 
 class CrowdSecAuthError(CrowdSecError):
-    """Anmeldedaten wurden abgelehnt."""
+    """Anmeldedaten wurden abgelehnt.
+
+    ``endpoint`` benennt den Zugang, der abgelehnt hat — die drei sind
+    unabhängig voneinander und die Meldung soll sagen, welcher klemmt.
+    """
+
+    def __init__(self, message: str, endpoint: str = ENDPOINT_LAPI) -> None:
+        super().__init__(message)
+        self.endpoint = endpoint
 
 
 def _parse_expiry(raw: Any) -> datetime | None:
@@ -87,7 +100,8 @@ class CrowdSecClient:
             ) as response:
                 if response.status in (401, 403):
                     raise CrowdSecAuthError(
-                        f"Metrics-Endpunkt verweigert den Zugriff ({response.status})"
+                        f"Metrics-Endpunkt verweigert den Zugriff ({response.status})",
+                        ENDPOINT_METRICS,
                     )
                 if response.status != 200:
                     raise CrowdSecConnectionError(
@@ -129,7 +143,9 @@ class CrowdSecClient:
                     timeout=self._timeout,
                 ) as response:
                     if response.status in (401, 403):
-                        raise CrowdSecAuthError("Machine-Zugangsdaten wurden abgelehnt")
+                        raise CrowdSecAuthError(
+                            "Machine-Zugangsdaten wurden abgelehnt", ENDPOINT_LAPI
+                        )
                     if response.status != 200:
                         raise CrowdSecConnectionError(
                             f"LAPI-Login antwortete mit HTTP {response.status}"
@@ -142,7 +158,7 @@ class CrowdSecClient:
 
             token = (data or {}).get("token")
             if not token:
-                raise CrowdSecAuthError("LAPI-Login lieferte kein Token")
+                raise CrowdSecAuthError("LAPI-Login lieferte kein Token", ENDPOINT_LAPI)
 
             self._token = token
             self._token_expires = _parse_expiry((data or {}).get("expire")) or (
@@ -169,7 +185,7 @@ class CrowdSecClient:
                             # Token evtl. serverseitig verfallen: neu anmelden.
                             continue
                         raise CrowdSecAuthError(
-                            f"LAPI verweigert {path} ({response.status})"
+                            f"LAPI verweigert {path} ({response.status})", ENDPOINT_LAPI
                         )
                     if response.status != 200:
                         raise CrowdSecConnectionError(
@@ -183,7 +199,7 @@ class CrowdSecClient:
             except aiohttp.ClientError as err:
                 raise CrowdSecConnectionError(f"LAPI {path} fehlgeschlagen: {err}") from err
 
-        raise CrowdSecAuthError(f"LAPI verweigert {path}")
+        raise CrowdSecAuthError(f"LAPI verweigert {path}", ENDPOINT_LAPI)
 
     async def async_get_alerts(self, since: str = ALERTS_SINCE) -> list[dict[str, Any]]:
         """Alerts eines Zeitfensters, standardmäßig der letzten 24 Stunden."""
@@ -199,8 +215,9 @@ class CrowdSecClient:
     async def async_get_active_decision_count(self) -> int | None:
         """Anzahl aktiver Decisions über die Bouncer-API.
 
-        ``None``, wenn kein Bouncer-Key konfiguriert ist — dann übernimmt die
-        Metrik ``cs_active_decisions``.
+        ``None``, wenn kein Bouncer-Key konfiguriert ist oder der Endpunkt
+        nichts zu melden hat — dann übernimmt die Metrik
+        ``cs_active_decisions``.
         """
         if self._bouncer_api_key is None:
             return None
@@ -212,7 +229,16 @@ class CrowdSecClient:
                 timeout=self._timeout,
             ) as response:
                 if response.status in (401, 403):
-                    raise CrowdSecAuthError("Bouncer-API-Key wurde abgelehnt")
+                    raise CrowdSecAuthError(
+                        "Bouncer-API-Key wurde abgelehnt", ENDPOINT_BOUNCER
+                    )
+                if response.status == 404:
+                    # Nicht jede CrowdSec-Version liefert hier ein leeres
+                    # Array — ein 404 heißt "nichts vorhanden", nicht "kaputt".
+                    _LOGGER.debug(
+                        "/v1/decisions antwortete mit 404, Fallback auf die Metrik"
+                    )
+                    return None
                 if response.status != 200:
                     raise CrowdSecConnectionError(
                         f"LAPI /v1/decisions antwortete mit HTTP {response.status}"

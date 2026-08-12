@@ -31,7 +31,9 @@
     },
     "error": {
       "cannot_connect": "Instanz nicht erreichbar. URLs, Port und Tunnel prüfen.",
-      "invalid_auth": "Zugangsdaten wurden abgelehnt.",
+      "invalid_auth": "Die LAPI hat die Machine-Zugangsdaten abgelehnt. Machine-ID und Passwort prüfen sowie, ob die Machine validiert ist (cscli machines list).",
+      "invalid_auth_metrics": "Der Metrics-Endpunkt verweigert den Zugriff. Er ist normalerweise ohne Anmeldung erreichbar — vermutlich verlangt ein vorgelagerter Proxy oder Tunnel Zugangsdaten.",
+      "invalid_auth_bouncer": "Der Bouncer-API-Key wurde abgelehnt. Feld leer lassen, dann wird die Metrik cs_active_decisions verwendet.",
       "unknown": "Unerwarteter Fehler, siehe Protokoll."
     },
     "abort": {

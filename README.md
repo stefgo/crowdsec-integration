@@ -109,6 +109,31 @@ automation:
             CrowdSec: {{ state_attr('binary_sensor.crowdsec_edge_storung', 'reasons') | join(', ') }}
 ```
 
+## Fehlersuche bei der Einrichtung
+
+Der Config-Flow benennt den abgelehnten Zugang einzeln — Metrics-Endpunkt,
+LAPI-Login und Bouncer-Key werden getrennt gemeldet. Zum Nachstellen auf der
+Kommandozeile:
+
+```bash
+curl -si http://<host>:6060/metrics | head -1
+curl -si -X POST http://<host>:8080/v1/watchers/login \
+  -H 'Content-Type: application/json' \
+  -d '{"machine_id":"<id>","password":"<passwort>"}'
+```
+
+Antwortet `/v1/decisions` mit **404**, ist das kein Fehler: Nicht jede
+CrowdSec-Version liefert dort ein leeres Array. Die Integration weicht in dem
+Fall automatisch auf `cs_active_decisions` aus.
+
+Detailliertes Protokoll:
+
+```yaml
+logger:
+  logs:
+    custom_components.crowdsec: debug
+```
+
 ## Verhalten bei Ausfall
 
 Schlägt ein Scrape fehl, gehen die Messwerte auf `unavailable` — sie werden

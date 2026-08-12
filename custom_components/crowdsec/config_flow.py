@@ -14,7 +14,12 @@ from homeassistant.core import callback
 from homeassistant.helpers import config_validation as cv
 
 from . import build_client
-from .api import CrowdSecAuthError, CrowdSecConnectionError
+from .api import (
+    ENDPOINT_BOUNCER,
+    ENDPOINT_METRICS,
+    CrowdSecAuthError,
+    CrowdSecConnectionError,
+)
 from .const import (
     CONF_BOUNCER_API_KEY,
     CONF_BOUNCER_IDLE_INTERVALS,
@@ -55,13 +60,21 @@ def _unique_id(user_input: dict[str, Any]) -> str:
     return f"{parts.scheme}://{parts.netloc}".lower()
 
 
+# Jeder der drei Zugänge bekommt eine eigene Meldung — sonst rät man, welcher
+# abgelehnt hat.
+AUTH_ERRORS = {
+    ENDPOINT_METRICS: "invalid_auth_metrics",
+    ENDPOINT_BOUNCER: "invalid_auth_bouncer",
+}
+
+
 async def _async_validate(hass, user_input: dict[str, Any]) -> str | None:
     """Verbindung testen; gibt einen Fehlerschlüssel zurück oder ``None``."""
     client = build_client(hass, user_input, user_input.get(CONF_VERIFY_SSL, True))
     try:
         await client.async_validate()
-    except CrowdSecAuthError:
-        return "invalid_auth"
+    except CrowdSecAuthError as err:
+        return AUTH_ERRORS.get(err.endpoint, "invalid_auth")
     except CrowdSecConnectionError:
         return "cannot_connect"
     except Exception:  # noqa: BLE001 - unerwartetes soll den Flow nicht sprengen

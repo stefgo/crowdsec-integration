@@ -31,7 +31,9 @@
     },
     "error": {
       "cannot_connect": "Cannot reach the instance. Check URLs, port and tunnel.",
-      "invalid_auth": "Credentials were rejected.",
+      "invalid_auth": "The LAPI rejected the machine credentials. Check machine ID and password, and whether the machine is validated (cscli machines list).",
+      "invalid_auth_metrics": "The metrics endpoint denied access. It is usually unauthenticated — a proxy or tunnel in front of it is likely asking for credentials.",
+      "invalid_auth_bouncer": "The bouncer API key was rejected. Leave the field empty to use the cs_active_decisions metric instead.",
       "unknown": "Unexpected error, see the log."
     },
     "abort": {
