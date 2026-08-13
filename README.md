@@ -81,9 +81,11 @@ Danach *Einstellungen → Geräte & Dienste → Integration hinzufügen → Crow
 | Bouncer-API-Key | optional, aus `cscli bouncers add` |
 | SSL prüfen | bei selbstsignierten Zertifikaten abschalten |
 
-Unter *Konfigurieren* lassen sich Abfrageintervall (Standard 60 s),
-Schwellwert der Parse-Fehlerquote (5 %) und die Zahl der Intervalle ohne
-Bouncer-Abfragen bis zur Störung (5) anpassen.
+Unter *Konfigurieren* lassen sich Abfrageintervall (Standard 60 s), Zeitlimit
+je Anfrage (15 s), Schwellwert der Parse-Fehlerquote (5 %) und die Zahl der
+Intervalle ohne Bouncer-Abfragen bis zur Störung (5) anpassen. Das Zeitlimit
+gilt pro Anfrage und muss kleiner als das Abfrageintervall sein — bei einer
+Instanz hinter VPN oder langsamem Proxy hilft ein höherer Wert.
 
 ## Wann „Störung" auslöst
 

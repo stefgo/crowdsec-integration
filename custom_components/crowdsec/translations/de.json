@@ -48,10 +48,17 @@
         "title": "CrowdSec-Optionen",
         "data": {
           "scan_interval": "Abfrageintervall (Sekunden)",
+          "timeout": "Zeitlimit je Anfrage (Sekunden)",
           "parse_error_threshold": "Schwellwert Parse-Fehlerquote (%)",
           "bouncer_idle_intervals": "Intervalle ohne Bouncer-Abfragen bis zur Störung"
+        },
+        "data_description": {
+          "timeout": "Muss kleiner als das Abfrageintervall sein. Höher setzen, wenn die Instanz über VPN oder einen langsamen Proxy erreicht wird."
         }
       }
+    },
+    "error": {
+      "timeout_too_long": "Das Zeitlimit muss kleiner als das Abfrageintervall sein, sonst überholen sich die Abfragezyklen."
     }
   },
   "entity": {

@@ -9,7 +9,12 @@ from urllib.parse import urlsplit
 import voluptuous as vol
 
 from homeassistant.config_entries import ConfigFlow, ConfigFlowResult, OptionsFlow
-from homeassistant.const import CONF_NAME, CONF_SCAN_INTERVAL, CONF_VERIFY_SSL
+from homeassistant.const import (
+    CONF_NAME,
+    CONF_SCAN_INTERVAL,
+    CONF_TIMEOUT,
+    CONF_VERIFY_SSL,
+)
 from homeassistant.core import callback
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.selector import (
@@ -43,6 +48,7 @@ from .const import (
     DEFAULT_NAME,
     DEFAULT_PARSE_ERROR_THRESHOLD,
     DEFAULT_SCAN_INTERVAL,
+    DEFAULT_TIMEOUT,
     DOMAIN,
 )
 
@@ -55,6 +61,13 @@ SECRET_SELECTOR = TextSelector(TextSelectorConfig(type=TextSelectorType.PASSWORD
 # Eingabefeld statt Schieberegler: die Anzahl der Intervalle wird direkt getippt.
 BOUNCER_IDLE_INTERVALS_SELECTOR = NumberSelector(
     NumberSelectorConfig(min=1, max=100, step=1, mode=NumberSelectorMode.BOX)
+)
+
+# Gilt pro Anfrage; die Obergrenze hält ihn deutlich unter dem Abfrageintervall.
+TIMEOUT_SELECTOR = NumberSelector(
+    NumberSelectorConfig(
+        min=1, max=60, step=1, mode=NumberSelectorMode.BOX, unit_of_measurement="s"
+    )
 )
 
 STEP_USER_SCHEMA = vol.Schema(
@@ -205,20 +218,33 @@ class CrowdSecOptionsFlow(OptionsFlow):
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
+        errors: dict[str, str] = {}
+        options = dict(self.config_entry.options)
+
         if user_input is not None:
-            # Der Number-Selector liefert einen Float; intern wird ganzzahlig gezählt.
+            # Die Number-Selectoren liefern Floats; intern wird ganzzahlig gerechnet.
             user_input[CONF_BOUNCER_IDLE_INTERVALS] = int(
                 user_input[CONF_BOUNCER_IDLE_INTERVALS]
             )
-            return self.async_create_entry(title="", data=user_input)
+            user_input[CONF_TIMEOUT] = int(user_input[CONF_TIMEOUT])
+            # Ein Update-Zyklus stellt mehrere Anfragen. Reicht schon eine
+            # einzelne bis ins nächste Intervall, überholen sich die Zyklen.
+            if user_input[CONF_TIMEOUT] >= int(user_input[CONF_SCAN_INTERVAL]):
+                errors[CONF_TIMEOUT] = "timeout_too_long"
+            else:
+                return self.async_create_entry(title="", data=user_input)
+            options = user_input
 
-        options = self.config_entry.options
         schema = vol.Schema(
             {
                 vol.Required(
                     CONF_SCAN_INTERVAL,
                     default=options.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL),
                 ): vol.All(vol.Coerce(int), vol.Range(min=10, max=3600)),
+                vol.Required(
+                    CONF_TIMEOUT,
+                    default=options.get(CONF_TIMEOUT, DEFAULT_TIMEOUT),
+                ): TIMEOUT_SELECTOR,
                 vol.Required(
                     CONF_PARSE_ERROR_THRESHOLD,
                     default=options.get(
@@ -233,4 +259,4 @@ class CrowdSecOptionsFlow(OptionsFlow):
                 ): BOUNCER_IDLE_INTERVALS_SELECTOR,
             }
         )
-        return self.async_show_form(step_id="init", data_schema=schema)
+        return self.async_show_form(step_id="init", data_schema=schema, errors=errors)

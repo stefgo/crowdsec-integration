@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 
-from homeassistant.const import CONF_VERIFY_SSL, Platform
+from homeassistant.const import CONF_TIMEOUT, CONF_VERIFY_SSL, Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
@@ -15,6 +15,7 @@ from .const import (
     CONF_MACHINE_ID,
     CONF_MACHINE_PASSWORD,
     CONF_METRICS_URL,
+    DEFAULT_TIMEOUT,
 )
 from .coordinator import CrowdSecConfigEntry, CrowdSecCoordinator
 
@@ -23,7 +24,12 @@ _LOGGER = logging.getLogger(__name__)
 PLATFORMS: list[Platform] = [Platform.BINARY_SENSOR, Platform.SENSOR]
 
 
-def build_client(hass: HomeAssistant, data: dict, verify_ssl: bool = True) -> CrowdSecClient:
+def build_client(
+    hass: HomeAssistant,
+    data: dict,
+    verify_ssl: bool = True,
+    timeout: int = DEFAULT_TIMEOUT,
+) -> CrowdSecClient:
     """Erzeuge einen Client aus den Entry-Daten (auch vom Config-Flow genutzt)."""
     return CrowdSecClient(
         async_get_clientsession(hass, verify_ssl=verify_ssl),
@@ -33,13 +39,15 @@ def build_client(hass: HomeAssistant, data: dict, verify_ssl: bool = True) -> Cr
         machine_password=data[CONF_MACHINE_PASSWORD],
         bouncer_api_key=data.get(CONF_BOUNCER_API_KEY),
         verify_ssl=verify_ssl,
+        timeout=timeout,
     )
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: CrowdSecConfigEntry) -> bool:
     """Richte eine CrowdSec-Instanz ein."""
     verify_ssl = entry.data.get(CONF_VERIFY_SSL, True)
-    client = build_client(hass, dict(entry.data), verify_ssl)
+    timeout = int(entry.options.get(CONF_TIMEOUT, DEFAULT_TIMEOUT))
+    client = build_client(hass, dict(entry.data), verify_ssl, timeout)
 
     coordinator = CrowdSecCoordinator(hass, entry, client)
     await coordinator.async_config_entry_first_refresh()
