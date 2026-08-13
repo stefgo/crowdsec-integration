@@ -23,6 +23,12 @@ from .entity import CrowdSecEntity
 # Zustandswerte in Home Assistant sind auf 255 Zeichen begrenzt.
 MAX_STATE_LENGTH = 255
 
+# Sprachneutrale Einheit für die Raten: Home Assistant übersetzt
+# ``native_unit_of_measurement`` nicht, ein deutsches „Zeilen/min" stünde also
+# auch in der englischen Oberfläche. Was gezählt wird, sagt der Entitätsname.
+UNIT_PER_MINUTE = "1/min"
+UNIT_LINES = "lines"
+
 
 @dataclass(frozen=True, kw_only=True)
 class CrowdSecSensorDescription(SensorEntityDescription):
@@ -81,7 +87,19 @@ SENSORS: tuple[CrowdSecSensorDescription, ...] = (
         value_fn=lambda data: data.new_bans_24h,
         attrs_fn=lambda data: {
             "alerts_24h": data.alerts_24h,
+            "banned_attackers_24h": data.banned_attackers_24h,
             "truncated": data.alerts_truncated,
+        },
+    ),
+    CrowdSecSensorDescription(
+        key="unique_attackers_24h",
+        translation_key="unique_attackers_24h",
+        icon="mdi:account-multiple-outline",
+        state_class=SensorStateClass.MEASUREMENT,
+        value_fn=lambda data: data.unique_attackers_24h,
+        attrs_fn=lambda data: {
+            "banned": data.banned_attackers_24h,
+            "top_attackers": data.top_attackers,
         },
     ),
     CrowdSecSensorDescription(
@@ -92,6 +110,28 @@ SENSORS: tuple[CrowdSecSensorDescription, ...] = (
         attrs_fn=lambda data: {"top_scenarios": data.top_scenarios},
     ),
     CrowdSecSensorDescription(
+        key="top_country_24h",
+        translation_key="top_country_24h",
+        icon="mdi:earth",
+        value_fn=lambda data: data.top_country,
+        attrs_fn=lambda data: {"top_countries": data.top_countries},
+    ),
+    CrowdSecSensorDescription(
+        key="top_attacker_24h",
+        translation_key="top_attacker_24h",
+        icon="mdi:crosshairs-gps",
+        value_fn=lambda data: data.top_attacker,
+        attrs_fn=lambda data: {"top_attackers": data.top_attackers},
+    ),
+    CrowdSecSensorDescription(
+        key="last_alert",
+        translation_key="last_alert",
+        device_class=SensorDeviceClass.TIMESTAMP,
+        icon="mdi:clock-alert-outline",
+        survives_outage=True,
+        value_fn=lambda data: data.last_alert,
+    ),
+    CrowdSecSensorDescription(
         key="active_buckets",
         translation_key="active_buckets",
         icon="mdi:bucket-outline",
@@ -100,10 +140,23 @@ SENSORS: tuple[CrowdSecSensorDescription, ...] = (
         attrs_fn=lambda data: {"by_scenario": data.buckets_by_name},
     ),
     CrowdSecSensorDescription(
+        key="lines_total",
+        translation_key="lines_total",
+        icon="mdi:file-document-outline",
+        native_unit_of_measurement=UNIT_LINES,
+        # Der Zähler läuft seit dem Start des Dienstes und springt bei einem
+        # Neustart zurück; TOTAL_INCREASING fängt genau das ab und liefert
+        # damit brauchbare Tages- und Wochensummen.
+        state_class=SensorStateClass.TOTAL_INCREASING,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        suggested_display_precision=0,
+        value_fn=lambda data: data.lines_total,
+    ),
+    CrowdSecSensorDescription(
         key="lines_per_minute",
         translation_key="lines_per_minute",
         icon="mdi:file-document-multiple-outline",
-        native_unit_of_measurement="Zeilen/min",
+        native_unit_of_measurement=UNIT_PER_MINUTE,
         state_class=SensorStateClass.MEASUREMENT,
         suggested_display_precision=1,
         value_fn=lambda data: data.lines_per_minute,
@@ -121,7 +174,7 @@ SENSORS: tuple[CrowdSecSensorDescription, ...] = (
         key="bouncer_queries_per_minute",
         translation_key="bouncer_queries_per_minute",
         icon="mdi:transit-connection-variant",
-        native_unit_of_measurement="Abfragen/min",
+        native_unit_of_measurement=UNIT_PER_MINUTE,
         state_class=SensorStateClass.MEASUREMENT,
         suggested_display_precision=1,
         value_fn=lambda data: data.bouncer_queries_per_minute,

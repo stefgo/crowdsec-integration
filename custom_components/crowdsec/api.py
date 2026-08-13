@@ -7,12 +7,23 @@ import hashlib
 import json
 import logging
 from datetime import datetime, timedelta, timezone
-from typing import Any
+from typing import Any, NamedTuple
 
 import aiohttp
 
-from .const import ALERTS_SINCE, DEFAULT_ALERTS_LIMIT, DEFAULT_TIMEOUT, USER_AGENT
+from .alerts import alert_id
+from .const import (
+    ALERTS_SINCE,
+    DECISION_ORIGIN,
+    DEFAULT_ALERTS_LIMIT,
+    DEFAULT_BAN_DURATION,
+    DEFAULT_BAN_REASON,
+    DEFAULT_TIMEOUT,
+    MAX_WINDOW_SPLITS,
+    USER_AGENT,
+)
 from .metrics import MetricSet, parse_prometheus
+from .timewindow import Window, parse_duration, split_window, window_params
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -47,6 +58,13 @@ class CrowdSecAuthError(CrowdSecError):
     def __init__(self, message: str, endpoint: str = ENDPOINT_LAPI) -> None:
         super().__init__(message)
         self.endpoint = endpoint
+
+
+class AlertResult(NamedTuple):
+    """Ergebnis einer Alert-Abfrage samt Hinweis auf Vollständigkeit."""
+
+    alerts: list[dict[str, Any]]
+    truncated: bool
 
 
 def _fingerprint(secret: str) -> str:
@@ -220,16 +238,22 @@ class CrowdSecClient:
             )
             return token
 
-    async def _async_lapi_get(
-        self, path: str, params: dict[str, str] | None = None
+    async def _async_lapi_request(
+        self,
+        method: str,
+        path: str,
+        params: dict[str, str] | None = None,
+        payload: Any = None,
     ) -> Any:
-        """GET auf der LAPI mit Machine-Auth, einmaliger Retry bei 401."""
+        """Anfrage an die LAPI mit Machine-Auth, einmaliger Retry bei 401."""
         for attempt in range(2):
             token = await self._async_token(force=attempt > 0)
             try:
-                async with self._session.get(
+                async with self._session.request(
+                    method,
                     f"{self._lapi_url}{path}",
                     params=params,
+                    json=payload,
                     headers={**self._headers, "Authorization": f"Bearer {token}"},
                     ssl=self._ssl,
                     timeout=self._timeout,
@@ -244,9 +268,11 @@ class CrowdSecClient:
                             f"(HTTP {response.status}): {body.strip()[:200]}",
                             ENDPOINT_ALERTS,
                         )
-                    if response.status != 200:
+                    if response.status not in (200, 201):
+                        body = await response.text()
                         raise CrowdSecConnectionError(
-                            f"LAPI {path} antwortete mit HTTP {response.status}"
+                            f"LAPI {path} antwortete mit HTTP {response.status}: "
+                            f"{body.strip()[:200]}"
                         )
                     return await response.json(content_type=None)
             except asyncio.TimeoutError as err:
@@ -258,18 +284,129 @@ class CrowdSecClient:
 
         raise CrowdSecAuthError(f"LAPI verweigert {path}", ENDPOINT_ALERTS)
 
-    async def async_get_alerts(
-        self, since: str = ALERTS_SINCE, limit: int = DEFAULT_ALERTS_LIMIT
+    async def _async_alerts_window(
+        self, window: Window, limit: int
     ) -> list[dict[str, Any]]:
-        """Alerts eines Zeitfensters, standardmäßig der letzten 24 Stunden."""
-        data = await self._async_lapi_get(
-            "/v1/alerts", {"since": since, "limit": str(limit)}
-        )
+        """Eine einzelne Alert-Abfrage über ein Zeitfenster."""
+        params = {**window_params(window), "limit": str(limit)}
+        data = await self._async_lapi_request("GET", "/v1/alerts", params)
         if not data:
             return []
         if not isinstance(data, list):
             raise CrowdSecConnectionError("LAPI /v1/alerts lieferte kein Array")
         return [alert for alert in data if isinstance(alert, dict)]
+
+    async def async_get_alerts(
+        self, since: str = ALERTS_SINCE, limit: int = DEFAULT_ALERTS_LIMIT
+    ) -> AlertResult:
+        """Alerts eines Zeitfensters, standardmäßig der letzten 24 Stunden.
+
+        Die LAPI kennt keine Pagination: Bei mehr Treffern als ``limit``
+        schneidet sie ab. Passiert das, wird das Zeitfenster halbiert und in
+        Teilen erneut abgefragt. Erst wenn auch ein Fenster von einer Minute
+        noch anschlägt oder die Teilungstiefe erschöpft ist, gilt das Ergebnis
+        als abgeschnitten.
+        """
+        minutes = parse_duration(since)
+        if minutes is None:
+            raise ValueError(f"Unbrauchbares Zeitfenster: {since!r}")
+
+        collected: dict[str, dict[str, Any]] = {}
+        truncated = False
+        # (Fenster, verbleibende Teilungen) — iterativ statt rekursiv, damit
+        # die Zahl der Anfragen jederzeit ablesbar bleibt.
+        pending: list[tuple[Window, int]] = [(Window(minutes, 0), MAX_WINDOW_SPLITS)]
+
+        while pending:
+            window, splits_left = pending.pop(0)
+            alerts = await self._async_alerts_window(window, limit)
+
+            if len(alerts) < limit:
+                self._collect(collected, alerts)
+                continue
+
+            halves = split_window(window) if splits_left > 0 else None
+            if halves is None:
+                # Nicht weiter teilbar: das Teilergebnis ist besser als nichts,
+                # aber die Zahlen sind unvollständig.
+                self._collect(collected, alerts)
+                truncated = True
+                _LOGGER.debug(
+                    "Alert-Fenster %s liefert weiterhin %d Treffer am Limit — "
+                    "Ergebnis unvollständig",
+                    window,
+                    len(alerts),
+                )
+                continue
+
+            pending.extend((half, splits_left - 1) for half in halves)
+
+        return AlertResult(list(collected.values()), truncated)
+
+    @staticmethod
+    def _collect(
+        target: dict[str, dict[str, Any]], alerts: list[dict[str, Any]]
+    ) -> None:
+        """Übernimm Alerts und halte Überschneidungen der Fenster heraus."""
+        for index, alert in enumerate(alerts):
+            key = alert_id(alert) or f"anon:{len(target)}:{index}"
+            target.setdefault(key, alert)
+
+    # -- Decisions setzen und löschen -------------------------------------
+
+    async def async_ban_ip(
+        self,
+        ip: str,
+        duration: str = DEFAULT_BAN_DURATION,
+        reason: str = DEFAULT_BAN_REASON,
+    ) -> None:
+        """Setze eine Ban-Decision über einen selbst erzeugten Alert.
+
+        Die LAPI kennt keinen Weg, eine Decision einzeln anzulegen — sie hängt
+        immer an einem Alert. Genau das macht ``cscli decisions add`` auch.
+        """
+        now = datetime.now(timezone.utc).isoformat()
+        scenario = f"manual '{reason}' from 'hass'"
+        alert = {
+            "scenario": scenario,
+            "scenario_hash": "",
+            "scenario_version": "",
+            "message": reason,
+            "events_count": 1,
+            "start_at": now,
+            "stop_at": now,
+            "capacity": 0,
+            "leakspeed": "0",
+            "simulated": False,
+            "events": [],
+            "remediation": True,
+            "labels": None,
+            "source": {"scope": "Ip", "value": ip, "ip": ip},
+            "decisions": [
+                {
+                    "duration": duration,
+                    "origin": DECISION_ORIGIN,
+                    "scenario": scenario,
+                    "scope": "Ip",
+                    "type": "ban",
+                    "value": ip,
+                }
+            ],
+        }
+        await self._async_lapi_request("POST", "/v1/alerts", payload=[alert])
+
+    async def async_unban_ip(self, ip: str) -> int:
+        """Lösche alle Decisions zu einer IP; liefert deren Anzahl."""
+        data = await self._async_lapi_request(
+            "DELETE", "/v1/decisions", {"scope": "Ip", "value": ip}
+        )
+        if isinstance(data, dict):
+            raw = data.get("nbDeleted")
+            try:
+                return int(raw)
+            except (TypeError, ValueError):
+                return 0
+        return 0
 
     async def async_get_active_decision_count(self) -> int | None:
         """Anzahl aktiver Decisions über die Bouncer-API.
@@ -323,6 +460,9 @@ class CrowdSecClient:
         """
         await self.async_get_metrics()
         await self._async_token(force=True)
-        await self.async_get_alerts()
+        # Bewusst ein winziges Fenster: Geprüft wird die Erreichbarkeit der
+        # Route, nicht der Inhalt — die Einrichtung soll nicht an tausenden
+        # Alerts hängen.
+        await self._async_alerts_window(Window(60, 0), 1)
         if self._bouncer_api_key is not None:
             await self.async_get_active_decision_count()

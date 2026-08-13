@@ -33,13 +33,14 @@
       "cannot_connect": "Cannot reach the instance. Check URLs, port and tunnel.",
       "invalid_auth": "The LAPI rejected the machine credentials. Check machine ID and password, and whether the machine is validated (cscli machines list).",
       "invalid_auth_metrics": "The metrics endpoint denied access. It is usually unauthenticated — a proxy or tunnel in front of it is likely asking for credentials.",
-      "invalid_auth_alerts": "The login succeeded, but the LAPI denies the alert query. See details below — only \"New bans 24h\" and \"Top scenario 24h\" are affected.",
+      "invalid_auth_alerts": "The login succeeded, but the LAPI denies the alert query. See details below — only the 24h alert sensors are affected.",
       "invalid_auth_bouncer": "The bouncer API key was rejected. Leave the field empty to use the cs_active_decisions metric instead.",
       "unknown": "Unexpected error, see the log."
     },
     "abort": {
       "already_configured": "This instance is already configured.",
-      "reauth_successful": "Re-authentication succeeded."
+      "reauth_successful": "Re-authentication succeeded.",
+      "unique_id_mismatch": "These credentials belong to a different CrowdSec instance."
     }
   },
   "options": {
@@ -51,16 +52,84 @@
           "timeout": "Request timeout (seconds)",
           "parse_error_threshold": "Parse error threshold (%)",
           "bouncer_idle_intervals": "Intervals without bouncer queries before a problem",
-          "alerts_limit": "Maximum alerts fetched (24h)"
+          "alerts_limit": "Alerts per query (24h)"
         },
         "data_description": {
           "timeout": "Must be lower than the polling interval. Raise it if the instance is reached over VPN or a slow proxy.",
-          "alerts_limit": "Upper bound of the alert query. Once reached, \"Alerts 24h\", \"New bans 24h\" and \"Top scenario 24h\" are truncated. High values slow down the fetch."
+          "alerts_limit": "Size of a single alert query. If it is hit, the time window is split and queried again, so the 24h numbers stay complete. Very high values slow down every cycle."
         }
       }
     },
     "error": {
       "timeout_too_long": "The timeout must be lower than the polling interval, otherwise polling cycles overlap."
+    }
+  },
+  "issues": {
+    "alerts_truncated": {
+      "title": "CrowdSec 24h numbers are incomplete",
+      "description": "The instance \"{name}\" reports more alerts in one minute than a single query returns ({limit}). Splitting the time window did not help, so \"Alerts 24h\", \"New bans 24h\" and the top lists are truncated. Raise \"Alerts per query\" in the integration options."
+    }
+  },
+  "exceptions": {
+    "entry_not_found": {
+      "message": "No CrowdSec instance found for {entry_id}."
+    },
+    "entry_not_loaded": {
+      "message": "The CrowdSec instance \"{name}\" is not loaded."
+    },
+    "invalid_ip": {
+      "message": "\"{ip}\" is not a valid IP address or range."
+    },
+    "service_failed": {
+      "message": "CrowdSec rejected the request: {error}"
+    }
+  },
+  "services": {
+    "ban_ip": {
+      "name": "Ban IP",
+      "description": "Creates a ban decision for an IP address or range.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Instance",
+          "description": "The CrowdSec instance the decision is added to."
+        },
+        "ip": {
+          "name": "IP address",
+          "description": "Single address or CIDR range, e.g. 192.0.2.10 or 192.0.2.0/24."
+        },
+        "duration": {
+          "name": "Duration",
+          "description": "How long the ban lasts, e.g. 30m, 4h or 1d."
+        },
+        "reason": {
+          "name": "Reason",
+          "description": "Shown as the scenario in cscli decisions list."
+        }
+      }
+    },
+    "unban_ip": {
+      "name": "Unban IP",
+      "description": "Removes all decisions for an IP address or range.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Instance",
+          "description": "The CrowdSec instance the decisions are removed from."
+        },
+        "ip": {
+          "name": "IP address",
+          "description": "Single address or CIDR range."
+        }
+      }
+    },
+    "refresh": {
+      "name": "Refresh",
+      "description": "Fetches metrics and alerts immediately instead of waiting for the next interval.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Instance",
+          "description": "The CrowdSec instance to poll."
+        }
+      }
     }
   },
   "entity": {
@@ -72,10 +141,15 @@
       "scrape_duration": { "name": "Scrape duration" },
       "last_restart": { "name": "Last restart" },
       "last_update": { "name": "Last update" },
+      "last_alert": { "name": "Last alert" },
       "active_decisions": { "name": "Active decisions" },
       "new_bans_24h": { "name": "New bans 24h" },
+      "unique_attackers_24h": { "name": "Unique attackers 24h" },
       "top_scenario_24h": { "name": "Top scenario 24h" },
+      "top_country_24h": { "name": "Top country 24h" },
+      "top_attacker_24h": { "name": "Top attacker 24h" },
       "active_buckets": { "name": "Active buckets" },
+      "lines_total": { "name": "Lines processed" },
       "lines_per_minute": { "name": "Lines per minute" },
       "parse_error_rate": { "name": "Parse error rate" },
       "bouncer_queries_per_minute": { "name": "Bouncer queries per minute" }

@@ -1,0 +1,43 @@
+ban_ip:
+  fields:
+    config_entry_id:
+      required: true
+      selector:
+        config_entry:
+          integration: crowdsec
+    ip:
+      required: true
+      example: 192.0.2.10
+      selector:
+        text:
+    duration:
+      default: 4h
+      example: 24h
+      selector:
+        text:
+    reason:
+      default: Home Assistant
+      example: Automation
+      selector:
+        text:
+
+unban_ip:
+  fields:
+    config_entry_id:
+      required: true
+      selector:
+        config_entry:
+          integration: crowdsec
+    ip:
+      required: true
+      example: 192.0.2.10
+      selector:
+        text:
+
+refresh:
+  fields:
+    config_entry_id:
+      required: true
+      selector:
+        config_entry:
+          integration: crowdsec

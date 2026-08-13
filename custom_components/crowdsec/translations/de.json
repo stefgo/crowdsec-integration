@@ -33,13 +33,14 @@
       "cannot_connect": "Instanz nicht erreichbar. URLs, Port und Tunnel prüfen.",
       "invalid_auth": "Die LAPI hat die Machine-Zugangsdaten abgelehnt. Machine-ID und Passwort prüfen sowie, ob die Machine validiert ist (cscli machines list).",
       "invalid_auth_metrics": "Der Metrics-Endpunkt verweigert den Zugriff. Er ist normalerweise ohne Anmeldung erreichbar — vermutlich verlangt ein vorgelagerter Proxy oder Tunnel Zugangsdaten.",
-      "invalid_auth_alerts": "Der Login gelang, aber die LAPI verweigert die Alert-Abfrage. Details siehe unten — betroffen sind nur „Neue Bans 24h\" und „Top-Szenario 24h\".",
+      "invalid_auth_alerts": "Der Login gelang, aber die LAPI verweigert die Alert-Abfrage. Details siehe unten — betroffen sind nur die 24h-Sensoren.",
       "invalid_auth_bouncer": "Der Bouncer-API-Key wurde abgelehnt. Feld leer lassen, dann wird die Metrik cs_active_decisions verwendet.",
       "unknown": "Unerwarteter Fehler, siehe Protokoll."
     },
     "abort": {
       "already_configured": "Diese Instanz ist bereits eingerichtet.",
-      "reauth_successful": "Neuanmeldung erfolgreich."
+      "reauth_successful": "Neuanmeldung erfolgreich.",
+      "unique_id_mismatch": "Diese Zugangsdaten gehören zu einer anderen CrowdSec-Instanz."
     }
   },
   "options": {
@@ -51,16 +52,84 @@
           "timeout": "Zeitlimit je Anfrage (Sekunden)",
           "parse_error_threshold": "Schwellwert Parse-Fehlerquote (%)",
           "bouncer_idle_intervals": "Intervalle ohne Bouncer-Abfragen bis zur Störung",
-          "alerts_limit": "Maximal abgerufene Alerts (24h)"
+          "alerts_limit": "Alerts je Abfrage (24h)"
         },
         "data_description": {
           "timeout": "Muss kleiner als das Abfrageintervall sein. Höher setzen, wenn die Instanz über VPN oder einen langsamen Proxy erreicht wird.",
-          "alerts_limit": "Obergrenze der Alert-Abfrage. Wird sie erreicht, sind „Alerts 24h\", „Neue Bans 24h\" und „Top-Szenario 24h\" abgeschnitten. Hohe Werte verlangsamen den Abruf."
+          "alerts_limit": "Größe einer einzelnen Alert-Abfrage. Wird sie erreicht, teilt die Integration das Zeitfenster und fragt erneut — die 24h-Zahlen bleiben also vollständig. Sehr hohe Werte verlangsamen jeden Zyklus."
         }
       }
     },
     "error": {
       "timeout_too_long": "Das Zeitlimit muss kleiner als das Abfrageintervall sein, sonst überholen sich die Abfragezyklen."
+    }
+  },
+  "issues": {
+    "alerts_truncated": {
+      "title": "CrowdSec-24h-Zahlen sind unvollständig",
+      "description": "Die Instanz „{name}\" meldet in einer einzigen Minute mehr Alerts, als eine Abfrage liefert ({limit}). Das Aufteilen des Zeitfensters hat nicht gereicht, daher sind „Alerts 24h\", „Neue Bans 24h\" und die Top-Listen abgeschnitten. Erhöhe „Alerts je Abfrage\" in den Optionen der Integration."
+    }
+  },
+  "exceptions": {
+    "entry_not_found": {
+      "message": "Zu {entry_id} gehört keine CrowdSec-Instanz."
+    },
+    "entry_not_loaded": {
+      "message": "Die CrowdSec-Instanz „{name}\" ist nicht geladen."
+    },
+    "invalid_ip": {
+      "message": "„{ip}\" ist keine gültige IP-Adresse und kein gültiger Bereich."
+    },
+    "service_failed": {
+      "message": "CrowdSec hat die Anfrage abgelehnt: {error}"
+    }
+  },
+  "services": {
+    "ban_ip": {
+      "name": "IP bannen",
+      "description": "Legt eine Ban-Decision für eine IP-Adresse oder einen Bereich an.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Instanz",
+          "description": "Die CrowdSec-Instanz, bei der die Decision angelegt wird."
+        },
+        "ip": {
+          "name": "IP-Adresse",
+          "description": "Einzelne Adresse oder CIDR-Bereich, z. B. 192.0.2.10 oder 192.0.2.0/24."
+        },
+        "duration": {
+          "name": "Dauer",
+          "description": "Wie lange der Ban gilt, z. B. 30m, 4h oder 1d."
+        },
+        "reason": {
+          "name": "Grund",
+          "description": "Erscheint als Szenario in cscli decisions list."
+        }
+      }
+    },
+    "unban_ip": {
+      "name": "Ban aufheben",
+      "description": "Löscht alle Decisions zu einer IP-Adresse oder einem Bereich.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Instanz",
+          "description": "Die CrowdSec-Instanz, bei der die Decisions gelöscht werden."
+        },
+        "ip": {
+          "name": "IP-Adresse",
+          "description": "Einzelne Adresse oder CIDR-Bereich."
+        }
+      }
+    },
+    "refresh": {
+      "name": "Aktualisieren",
+      "description": "Holt Metriken und Alerts sofort, statt auf das nächste Intervall zu warten.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Instanz",
+          "description": "Die abzufragende CrowdSec-Instanz."
+        }
+      }
     }
   },
   "entity": {
@@ -72,10 +141,15 @@
       "scrape_duration": { "name": "Scrape-Dauer" },
       "last_restart": { "name": "Letzter Neustart" },
       "last_update": { "name": "Letzte Aktualisierung" },
+      "last_alert": { "name": "Letzter Alert" },
       "active_decisions": { "name": "Aktive Decisions" },
       "new_bans_24h": { "name": "Neue Bans 24h" },
+      "unique_attackers_24h": { "name": "Eindeutige Angreifer 24h" },
       "top_scenario_24h": { "name": "Top-Szenario 24h" },
+      "top_country_24h": { "name": "Top-Land 24h" },
+      "top_attacker_24h": { "name": "Top-Angreifer 24h" },
       "active_buckets": { "name": "Aktive Buckets" },
+      "lines_total": { "name": "Verarbeitete Zeilen" },
       "lines_per_minute": { "name": "Zeilen/min" },
       "parse_error_rate": { "name": "Parse-Fehlerquote" },
       "bouncer_queries_per_minute": { "name": "Bouncer-Abfragen/min" }

@@ -93,10 +93,16 @@ STEP_USER_SCHEMA = vol.Schema(
 )
 
 
-def _unique_id(user_input: dict[str, Any]) -> str:
-    """Eine Instanz wird über ihre LAPI-Adresse identifiziert."""
+def build_unique_id(user_input: dict[str, Any]) -> str:
+    """Kennung einer Instanz: LAPI-Adresse plus Machine-ID.
+
+    Die Adresse allein reicht nicht — hinter derselben URL können über
+    getrennte Machines mehrere Engines liegen, und ``localhost:8080`` ist aus
+    Sicht verschiedener Tunnel nicht dieselbe Instanz.
+    """
     parts = urlsplit(user_input[CONF_LAPI_URL].rstrip("/"))
-    return f"{parts.scheme}://{parts.netloc}".lower()
+    machine = str(user_input.get(CONF_MACHINE_ID, "")).strip()
+    return f"{parts.scheme}://{parts.netloc}".lower() + f"|{machine}"
 
 
 # Jeder der drei Zugänge bekommt eine eigene Meldung — sonst rät man, welcher
@@ -135,7 +141,7 @@ async def _async_validate(
 class CrowdSecConfigFlow(ConfigFlow, domain=DOMAIN):
     """Einrichtung über die Oberfläche; mehrere Instanzen sind erlaubt."""
 
-    VERSION = 1
+    VERSION = 2
 
     def __init__(self) -> None:
         self._reauth_data: dict[str, Any] = {}
@@ -148,7 +154,7 @@ class CrowdSecConfigFlow(ConfigFlow, domain=DOMAIN):
         detail = ""
 
         if user_input is not None:
-            await self.async_set_unique_id(_unique_id(user_input))
+            await self.async_set_unique_id(build_unique_id(user_input))
             self._abort_if_unique_id_configured()
 
             result = await _async_validate(self.hass, user_input)
@@ -194,7 +200,11 @@ class CrowdSecConfigFlow(ConfigFlow, domain=DOMAIN):
             merged = {**self._reauth_data, **user_input}
             result = await _async_validate(self.hass, merged)
             if result is None:
-                return self.async_update_reload_and_abort(entry, data=merged)
+                # Die Machine-ID gehört zur Kennung — wird sie hier getauscht,
+                # muss die Kennung mitwandern.
+                return self.async_update_reload_and_abort(
+                    entry, data=merged, unique_id=build_unique_id(merged)
+                )
             errors["base"], detail = result
 
         return self.async_show_form(

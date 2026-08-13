@@ -16,8 +16,10 @@ from .const import (
     CONF_MACHINE_PASSWORD,
     CONF_METRICS_URL,
     DEFAULT_TIMEOUT,
+    DOMAIN,
 )
 from .coordinator import CrowdSecConfigEntry, CrowdSecCoordinator
+from .services import async_setup_services, async_unload_services
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -43,6 +45,30 @@ def build_client(
     )
 
 
+async def async_migrate_entry(hass: HomeAssistant, entry: CrowdSecConfigEntry) -> bool:
+    """Hebe ältere Einträge auf das aktuelle Schema.
+
+    Version 1 hat eine Instanz allein über ihre LAPI-Adresse identifiziert.
+    Zwei Engines hinter derselben Adresse — etwa über unterschiedliche Tunnel
+    oder mit getrennten Machines — ließen sich damit nicht parallel einrichten.
+    Ab Version 2 gehört die Machine-ID zur Kennung.
+    """
+    if entry.version > 2:
+        # Herabgestufte Integration: der Eintrag stammt aus einer neueren
+        # Version und darf nicht angefasst werden.
+        return False
+
+    if entry.version == 1:
+        from .config_flow import build_unique_id
+
+        hass.config_entries.async_update_entry(
+            entry, unique_id=build_unique_id(entry.data), version=2
+        )
+        _LOGGER.debug("Config-Entry %s auf Version 2 gehoben", entry.title)
+
+    return True
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: CrowdSecConfigEntry) -> bool:
     """Richte eine CrowdSec-Instanz ein."""
     verify_ssl = entry.data.get(CONF_VERIFY_SSL, True)
@@ -55,12 +81,18 @@ async def async_setup_entry(hass: HomeAssistant, entry: CrowdSecConfigEntry) -> 
     entry.runtime_data = coordinator
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     entry.async_on_unload(entry.add_update_listener(async_reload_entry))
+    async_setup_services(hass)
     return True
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: CrowdSecConfigEntry) -> bool:
     """Entferne eine Instanz."""
-    return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+    unloaded = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+    if unloaded and len(hass.config_entries.async_loaded_entries(DOMAIN)) <= 1:
+        # Der eigene Eintrag zählt hier noch mit — bleibt kein weiterer übrig,
+        # sind die Dienste ohne Ziel.
+        async_unload_services(hass)
+    return unloaded
 
 
 async def async_reload_entry(hass: HomeAssistant, entry: CrowdSecConfigEntry) -> None:

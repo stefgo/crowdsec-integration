@@ -148,6 +148,20 @@ class MetricSet:
             grouped[key] = grouped.get(key, 0.0) + sample.value
         return grouped
 
+    def as_dict(self, prefix: str = "") -> dict[str, list[dict[str, object]]]:
+        """Serialisierbare Sicht für die Diagnosedaten.
+
+        ``prefix`` filtert auf die interessanten Metriken — der Endpunkt
+        liefert daneben die komplette Go-Runtime, die niemandem hilft.
+        """
+        return {
+            name: [
+                {"labels": sample.labels, "value": sample.value} for sample in samples
+            ]
+            for name, samples in self._samples.items()
+            if name.startswith(prefix)
+        }
+
     def label_of(self, name: str, label: str) -> str | None:
         """Labelwert des ersten Samples, etwa die Version aus ``cs_info``."""
         for sample in self._samples.get(name, []):

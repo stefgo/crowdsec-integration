@@ -1,0 +1,5 @@
+# Die Tests kommen ohne laufendes Home Assistant aus: Geprüft wird die reine
+# Logik (Metrik-Parser, Raten, Alert-Auswertung, Zeitfenster) plus die
+# Konsistenz von Manifest und Übersetzungen.
+pytest>=8.0
+aiohttp>=3.9
