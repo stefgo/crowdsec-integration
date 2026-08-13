@@ -229,8 +229,10 @@ class CrowdSecCoordinator(DataUpdateCoordinator[CrowdSecData]):
         parse_ok = metrics.total(METRIC_PARSER_OK)
         parse_ko = metrics.total(METRIC_PARSER_KO)
         lines = metrics.first_total((METRIC_PARSER_HITS, METRIC_READER_HITS))
-        if lines is None and parse_ok is not None and parse_ko is not None:
-            lines = parse_ok + parse_ko
+        if lines is None and (parse_ok is not None or parse_ko is not None):
+            # Fehlender ok/ko-Counter zählt als 0 — CrowdSec exportiert die
+            # ko-Metrik erst nach dem ersten Parse-Fehler.
+            lines = (parse_ok or 0.0) + (parse_ko or 0.0)
 
         bouncer = metrics.total(METRIC_LAPI_ROUTE_REQUESTS, _route_is_decisions)
         if bouncer is None:
