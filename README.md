@@ -249,6 +249,10 @@ Konsistenz von Manifest, `strings.json` und Übersetzungen. In CI laufen
 zusätzlich `hassfest` und die HACS-Validierung (siehe
 [.github/workflows/validate.yml](.github/workflows/validate.yml)).
 
+## Lizenz
+
+[MIT](LICENSE).
+
 ## Aktualisierung von Version 1.0
 
 Beim ersten Start hebt die Integration bestehende Einträge automatisch auf das
