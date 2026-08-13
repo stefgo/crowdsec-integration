@@ -14,8 +14,8 @@
           "verify_ssl": "Verify SSL certificate"
         },
         "data_description": {
-          "metrics_url": "Usually http://<host>:6060/metrics",
-          "lapi_url": "Usually http://<host>:8080",
+          "metrics_url": "Usually http://HOST:6060/metrics",
+          "lapi_url": "Usually http://HOST:8080",
           "bouncer_api_key": "Only needed for an exact decision count; otherwise the cs_active_decisions metric is used."
         }
       },

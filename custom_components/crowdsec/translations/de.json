@@ -14,8 +14,8 @@
           "verify_ssl": "SSL-Zertifikat prüfen"
         },
         "data_description": {
-          "metrics_url": "Üblicherweise http://<host>:6060/metrics",
-          "lapi_url": "Üblicherweise http://<host>:8080",
+          "metrics_url": "Üblicherweise http://HOST:6060/metrics",
+          "lapi_url": "Üblicherweise http://HOST:8080",
           "bouncer_api_key": "Nur nötig für eine exakte Decision-Zahl; sonst wird die Metrik cs_active_decisions verwendet."
         }
       },

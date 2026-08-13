@@ -7,6 +7,7 @@ auseinander — ein fehlender Schlüssel fällt erst in der Oberfläche auf.
 from __future__ import annotations
 
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -60,6 +61,35 @@ def test_translations_cover_all_strings():
         actual = _keys(json.loads(path.read_text(encoding="utf-8")))
         assert not expected - actual, f"{path.name} fehlen: {sorted(expected - actual)}"
         assert not actual - expected, f"{path.name} hat zu viel: {sorted(actual - expected)}"
+
+
+# Derselbe Ausdruck, mit dem hassfest Übersetzungen prüft. Er schlägt schon
+# bei einem Platzhalter wie "<host>" an — nicht nur bei echtem HTML.
+HTML_PATTERN = re.compile(r"<[a-z][\s\S]*>")
+
+
+def _values(node, prefix=""):
+    """Alle Blattwerte mit ihrem Pfad."""
+    if isinstance(node, dict):
+        for key, value in node.items():
+            yield from _values(value, f"{prefix}.{key}" if prefix else key)
+    elif isinstance(node, str):
+        yield prefix, node
+
+
+def test_no_html_in_translations():
+    for path in [COMPONENT / "strings.json", *TRANSLATIONS]:
+        content = json.loads(path.read_text(encoding="utf-8"))
+        for where, text in _values(content):
+            assert not HTML_PATTERN.search(text), f"{path.name}: HTML in {where}: {text}"
+
+
+def test_placeholders_are_balanced():
+    """Geschweifte Klammern sind Platzhalter — eine einzelne bricht die Anzeige."""
+    for path in [COMPONENT / "strings.json", *TRANSLATIONS]:
+        content = json.loads(path.read_text(encoding="utf-8"))
+        for where, text in _values(content):
+            assert text.count("{") == text.count("}"), f"{path.name}: {where}"
 
 
 def test_services_are_documented():
