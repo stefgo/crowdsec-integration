@@ -66,4 +66,14 @@ def test_missing_start_time_still_compares():
 def test_error_ratio():
     assert error_ratio(95.0, 5.0) == 5.0
     assert error_ratio(0.0, 0.0) is None
-    assert error_ratio(None, 5.0) is None
+    assert error_ratio(None, None) is None
+
+
+def test_error_ratio_treats_missing_counter_as_zero():
+    # Fehlerfreier Parser: ko-Metrik fehlt komplett -> 0 %, nicht „unbekannt".
+    assert error_ratio(1000.0, None) == 0.0
+    # Umgekehrt: nur Fehler, keine ok-Metrik -> 100 %.
+    assert error_ratio(None, 5.0) == 100.0
+    # Ohne verarbeitete Zeilen bleibt es unbekannt.
+    assert error_ratio(None, 0.0) is None
+    assert error_ratio(0.0, None) is None

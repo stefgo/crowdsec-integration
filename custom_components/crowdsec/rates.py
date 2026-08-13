@@ -95,9 +95,17 @@ class RateTracker:
 
 
 def error_ratio(ok: float | None, ko: float | None) -> float | None:
-    """Fehleranteil in Prozent aus einem ok/ko-Paar."""
-    if ok is None or ko is None:
+    """Fehleranteil in Prozent aus einem ok/ko-Paar.
+
+    Fehlt einer der beiden Werte, zählt er als 0: CrowdSec exportiert
+    ``cs_parser_hits_ko_total`` erst nach dem ersten Parse-Fehler, ein
+    fehlerfreier Parser soll aber 0 % zeigen statt „unbekannt".
+    ``None`` bleibt dem Fall „gar keine Daten" vorbehalten.
+    """
+    if ok is None and ko is None:
         return None
+    ok = ok or 0.0
+    ko = ko or 0.0
     total = ok + ko
     if total <= 0:
         return None
