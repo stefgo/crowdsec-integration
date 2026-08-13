@@ -13,6 +13,9 @@ from homeassistant.const import CONF_NAME, CONF_SCAN_INTERVAL, CONF_VERIFY_SSL
 from homeassistant.core import callback
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.selector import (
+    NumberSelector,
+    NumberSelectorConfig,
+    NumberSelectorMode,
     TextSelector,
     TextSelectorConfig,
     TextSelectorType,
@@ -48,6 +51,11 @@ _LOGGER = logging.getLogger(__name__)
 # Echtes Passwortfeld: verdeckt die Eingabe und hält die Autovervollständigung
 # des Browsers von einem einfachen Textfeld fern.
 SECRET_SELECTOR = TextSelector(TextSelectorConfig(type=TextSelectorType.PASSWORD))
+
+# Eingabefeld statt Schieberegler: die Anzahl der Intervalle wird direkt getippt.
+BOUNCER_IDLE_INTERVALS_SELECTOR = NumberSelector(
+    NumberSelectorConfig(min=1, max=100, step=1, mode=NumberSelectorMode.BOX)
+)
 
 STEP_USER_SCHEMA = vol.Schema(
     {
@@ -198,6 +206,10 @@ class CrowdSecOptionsFlow(OptionsFlow):
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         if user_input is not None:
+            # Der Number-Selector liefert einen Float; intern wird ganzzahlig gezählt.
+            user_input[CONF_BOUNCER_IDLE_INTERVALS] = int(
+                user_input[CONF_BOUNCER_IDLE_INTERVALS]
+            )
             return self.async_create_entry(title="", data=user_input)
 
         options = self.config_entry.options
@@ -218,7 +230,7 @@ class CrowdSecOptionsFlow(OptionsFlow):
                     default=options.get(
                         CONF_BOUNCER_IDLE_INTERVALS, DEFAULT_BOUNCER_IDLE_INTERVALS
                     ),
-                ): vol.All(vol.Coerce(int), vol.Range(min=1, max=100)),
+                ): BOUNCER_IDLE_INTERVALS_SELECTOR,
             }
         )
         return self.async_show_form(step_id="init", data_schema=schema)
