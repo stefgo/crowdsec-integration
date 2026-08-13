@@ -50,10 +50,12 @@
           "scan_interval": "Abfrageintervall (Sekunden)",
           "timeout": "Zeitlimit je Anfrage (Sekunden)",
           "parse_error_threshold": "Schwellwert Parse-Fehlerquote (%)",
-          "bouncer_idle_intervals": "Intervalle ohne Bouncer-Abfragen bis zur Störung"
+          "bouncer_idle_intervals": "Intervalle ohne Bouncer-Abfragen bis zur Störung",
+          "alerts_limit": "Maximal abgerufene Alerts (24h)"
         },
         "data_description": {
-          "timeout": "Muss kleiner als das Abfrageintervall sein. Höher setzen, wenn die Instanz über VPN oder einen langsamen Proxy erreicht wird."
+          "timeout": "Muss kleiner als das Abfrageintervall sein. Höher setzen, wenn die Instanz über VPN oder einen langsamen Proxy erreicht wird.",
+          "alerts_limit": "Obergrenze der Alert-Abfrage. Wird sie erreicht, sind „Alerts 24h\", „Neue Bans 24h\" und „Top-Szenario 24h\" abgeschnitten. Hohe Werte verlangsamen den Abruf."
         }
       }
     },

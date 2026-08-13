@@ -11,7 +11,7 @@ from typing import Any
 
 import aiohttp
 
-from .const import ALERTS_LIMIT, ALERTS_SINCE, DEFAULT_TIMEOUT, USER_AGENT
+from .const import ALERTS_SINCE, DEFAULT_ALERTS_LIMIT, DEFAULT_TIMEOUT, USER_AGENT
 from .metrics import MetricSet, parse_prometheus
 
 _LOGGER = logging.getLogger(__name__)
@@ -258,10 +258,12 @@ class CrowdSecClient:
 
         raise CrowdSecAuthError(f"LAPI verweigert {path}", ENDPOINT_ALERTS)
 
-    async def async_get_alerts(self, since: str = ALERTS_SINCE) -> list[dict[str, Any]]:
+    async def async_get_alerts(
+        self, since: str = ALERTS_SINCE, limit: int = DEFAULT_ALERTS_LIMIT
+    ) -> list[dict[str, Any]]:
         """Alerts eines Zeitfensters, standardmäßig der letzten 24 Stunden."""
         data = await self._async_lapi_get(
-            "/v1/alerts", {"since": since, "limit": str(ALERTS_LIMIT)}
+            "/v1/alerts", {"since": since, "limit": str(limit)}
         )
         if not data:
             return []

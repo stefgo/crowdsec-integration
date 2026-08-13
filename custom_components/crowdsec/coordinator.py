@@ -22,13 +22,14 @@ from .api import (
     CrowdSecConnectionError,
 )
 from .const import (
-    ALERTS_LIMIT,
+    CONF_ALERTS_LIMIT,
     CONF_BOUNCER_IDLE_INTERVALS,
     CONF_PARSE_ERROR_THRESHOLD,
     COUNTER_BOUNCER,
     COUNTER_LINES,
     COUNTER_PARSE_KO,
     COUNTER_PARSE_OK,
+    DEFAULT_ALERTS_LIMIT,
     DEFAULT_BOUNCER_IDLE_INTERVALS,
     DEFAULT_PARSE_ERROR_THRESHOLD,
     DEFAULT_SCAN_INTERVAL,
@@ -125,6 +126,7 @@ class CrowdSecCoordinator(DataUpdateCoordinator[CrowdSecData]):
         self._bouncer_idle_limit = int(
             options.get(CONF_BOUNCER_IDLE_INTERVALS, DEFAULT_BOUNCER_IDLE_INTERVALS)
         )
+        self._alerts_limit = int(options.get(CONF_ALERTS_LIMIT, DEFAULT_ALERTS_LIMIT))
 
     # -- Update-Zyklus ----------------------------------------------------
 
@@ -143,7 +145,7 @@ class CrowdSecCoordinator(DataUpdateCoordinator[CrowdSecData]):
 
         alerts: list[dict[str, Any]] | None = None
         try:
-            alerts = await self.client.async_get_alerts()
+            alerts = await self.client.async_get_alerts(limit=self._alerts_limit)
         except CrowdSecAuthError as err:
             self._handle_auth_error(data, err)
         except CrowdSecConnectionError as err:
@@ -269,7 +271,7 @@ class CrowdSecCoordinator(DataUpdateCoordinator[CrowdSecData]):
         )
 
     def _apply_alerts(self, data: CrowdSecData, alerts: list[dict[str, Any]]) -> None:
-        data.alerts_truncated = len(alerts) >= ALERTS_LIMIT
+        data.alerts_truncated = len(alerts) >= self._alerts_limit
         scenarios: Counter[str] = Counter()
         bans = 0
         counted = 0

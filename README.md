@@ -83,7 +83,8 @@ Danach *Einstellungen → Geräte & Dienste → Integration hinzufügen → Crow
 
 Unter *Konfigurieren* lassen sich Abfrageintervall (Standard 60 s), Zeitlimit
 je Anfrage (15 s), Schwellwert der Parse-Fehlerquote (5 %) und die Zahl der
-Intervalle ohne Bouncer-Abfragen bis zur Störung (5) anpassen. Das Zeitlimit
+Intervalle ohne Bouncer-Abfragen bis zur Störung (5) sowie die maximal
+abgerufene Alert-Zahl (1000) anpassen. Das Zeitlimit
 gilt pro Anfrage und muss kleiner als das Abfrageintervall sein — bei einer
 Instanz hinter VPN oder langsamem Proxy hilft ein höherer Wert.
 

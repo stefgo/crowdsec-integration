@@ -35,6 +35,7 @@ from .api import (
     CrowdSecConnectionError,
 )
 from .const import (
+    CONF_ALERTS_LIMIT,
     CONF_BOUNCER_API_KEY,
     CONF_BOUNCER_IDLE_INTERVALS,
     CONF_LAPI_URL,
@@ -42,6 +43,7 @@ from .const import (
     CONF_MACHINE_PASSWORD,
     CONF_METRICS_URL,
     CONF_PARSE_ERROR_THRESHOLD,
+    DEFAULT_ALERTS_LIMIT,
     DEFAULT_BOUNCER_IDLE_INTERVALS,
     DEFAULT_LAPI_PORT,
     DEFAULT_METRICS_PORT,
@@ -68,6 +70,12 @@ TIMEOUT_SELECTOR = NumberSelector(
     NumberSelectorConfig(
         min=1, max=60, step=1, mode=NumberSelectorMode.BOX, unit_of_measurement="s"
     )
+)
+
+# Hohe Werte vergrößern die Antwort der LAPI spürbar — Alerts sind umfangreiche
+# Objekte samt Decisions.
+ALERTS_LIMIT_SELECTOR = NumberSelector(
+    NumberSelectorConfig(min=100, max=10000, step=1, mode=NumberSelectorMode.BOX)
 )
 
 STEP_USER_SCHEMA = vol.Schema(
@@ -227,6 +235,7 @@ class CrowdSecOptionsFlow(OptionsFlow):
                 user_input[CONF_BOUNCER_IDLE_INTERVALS]
             )
             user_input[CONF_TIMEOUT] = int(user_input[CONF_TIMEOUT])
+            user_input[CONF_ALERTS_LIMIT] = int(user_input[CONF_ALERTS_LIMIT])
             # Ein Update-Zyklus stellt mehrere Anfragen. Reicht schon eine
             # einzelne bis ins nächste Intervall, überholen sich die Zyklen.
             if user_input[CONF_TIMEOUT] >= int(user_input[CONF_SCAN_INTERVAL]):
@@ -257,6 +266,10 @@ class CrowdSecOptionsFlow(OptionsFlow):
                         CONF_BOUNCER_IDLE_INTERVALS, DEFAULT_BOUNCER_IDLE_INTERVALS
                     ),
                 ): BOUNCER_IDLE_INTERVALS_SELECTOR,
+                vol.Required(
+                    CONF_ALERTS_LIMIT,
+                    default=options.get(CONF_ALERTS_LIMIT, DEFAULT_ALERTS_LIMIT),
+                ): ALERTS_LIMIT_SELECTOR,
             }
         )
         return self.async_show_form(step_id="init", data_schema=schema, errors=errors)

@@ -18,6 +18,7 @@ CONF_MACHINE_PASSWORD = "machine_password"
 CONF_BOUNCER_API_KEY = "bouncer_api_key"
 CONF_PARSE_ERROR_THRESHOLD = "parse_error_threshold"
 CONF_BOUNCER_IDLE_INTERVALS = "bouncer_idle_intervals"
+CONF_ALERTS_LIMIT = "alerts_limit"
 
 # --- Vorgaben -------------------------------------------------------------
 DEFAULT_NAME = "CrowdSec"
@@ -30,7 +31,9 @@ DEFAULT_BOUNCER_IDLE_INTERVALS = 5
 
 # Zeitfenster für die 24h-Auswertung über die LAPI.
 ALERTS_SINCE = "24h"
-ALERTS_LIMIT = 1000
+# Obergrenze der Alert-Abfrage. Wird sie erreicht, sind die 24h-Zahlen
+# abgeschnitten — deshalb über die Optionen anpassbar.
+DEFAULT_ALERTS_LIMIT = 1000
 TOP_SCENARIO_COUNT = 5
 
 # --- Metriknamen des CrowdSec-Prometheus-Endpunkts ------------------------
