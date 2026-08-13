@@ -57,7 +57,7 @@
   "entity": {
     "binary_sensor": {
       "reachable": { "name": "Erreichbar" },
-      "problem": { "name": "Störung" }
+      "problem": { "name": "Status" }
     },
     "sensor": {
       "scrape_duration": { "name": "Scrape-Dauer" },
