@@ -1,0 +1,199 @@
+# CrowdSec -> Push-Benachrichtigung und Badge auf iOS/iPadOS
+#
+# Als Home-Assistant-Package einbinden, z. B. als
+# ``config/packages/crowdsec_push.yaml`` mit folgendem Eintrag in der
+# ``configuration.yaml``:
+#
+#   homeassistant:
+#     packages: !include_dir_named packages
+#
+# Vorher anpassen:
+#   * ``mobile_app_iphone`` -> der echte Dienst der Companion-App
+#     (Entwicklerwerkzeuge -> Aktionen -> "notify." eintippen)
+#   * die Entity-IDs der CrowdSec-Sensoren, falls die Instanz anders heißt
+#
+# Der Kern der Schwall-Festigkeit: Es wird *nie* pro Ban gepusht. Jeder Ban
+# landet nur im Puffer-Sensor, und eine zweite Automatisierung schickt daraus
+# eine zusammengefasste Meldung — entweder wenn 45 Sekunden Ruhe eingekehrt
+# ist, sofort bei einer erkannten Welle oder spätestens alle fünf Minuten.
+
+notify:
+  - platform: group
+    name: crowdsec_mobile
+    services:
+      # Pro Gerät eine Zeile. Der Name ist der Dienst ohne "notify.".
+      - service: mobile_app_iphone
+
+template:
+  # Sammelt alle Bans zwischen zwei Pushes. Der Zustand ist die Anzahl der
+  # gemeldeten Bans, die Attribute halten IPs, Szenarien und Länder für die
+  # Zusammenfassung. Ein "crowdsec_push_flush"-Event setzt alles zurück.
+  - trigger:
+      - trigger: event
+        event_type: crowdsec_new_ban
+        id: ban
+      - trigger: event
+        event_type: crowdsec_push_flush
+        id: reset
+      - trigger: homeassistant
+        event: start
+        id: reset
+    sensor:
+      - name: CrowdSec Ban-Puffer
+        unique_id: crowdsec_ban_buffer
+        icon: mdi:shield-alert
+        state: >-
+          {% if trigger.id == 'ban' %}
+            {{ (this.state | int(0)) + 1 }}
+          {% else %}
+            0
+          {% endif %}
+        attributes:
+          ips: >-
+            {% if trigger.id != 'ban' %}
+              {{ [] }}
+            {% else %}
+              {{ ((this.attributes.get('ips', []) + [trigger.event.data.ip])
+                   | reject('none') | unique | list)[-50:] }}
+            {% endif %}
+          scenarios: >-
+            {% if trigger.id != 'ban' %}
+              {{ [] }}
+            {% else %}
+              {{ ((this.attributes.get('scenarios', []) + [trigger.event.data.scenario])
+                   | reject('none') | unique | list)[-20:] }}
+            {% endif %}
+          countries: >-
+            {% if trigger.id != 'ban' %}
+              {{ [] }}
+            {% else %}
+              {{ ((this.attributes.get('countries', []) + [trigger.event.data.country])
+                   | reject('none') | unique | list)[-20:] }}
+            {% endif %}
+          last_ip: >-
+            {{ trigger.event.data.ip if trigger.id == 'ban' else none }}
+          last_scenario: >-
+            {{ trigger.event.data.scenario if trigger.id == 'ban' else none }}
+
+automation:
+  # ---------------------------------------------------------------------
+  # Sammel-Push. Feuert nie öfter als der Puffer geleert wird, fasst
+  # beliebig viele Bans zu einer Meldung zusammen und ersetzt dank "tag"
+  # die vorherige Meldung auf dem Sperrbildschirm, statt sie zu stapeln.
+  # ---------------------------------------------------------------------
+  - alias: "CrowdSec - Sammel-Push (iOS)"
+    id: crowdsec_digest_push
+    mode: single
+    max_exceeded: silent
+    triggers:
+      # Normalfall: 45 Sekunden lang kein neuer Ban mehr.
+      - trigger: state
+        entity_id: sensor.crowdsec_ban_puffer
+        for: "00:00:45"
+        id: ruhe
+      # Welle: so viele Bans, dass sofort gemeldet werden soll.
+      - trigger: numeric_state
+        entity_id: sensor.crowdsec_ban_puffer
+        above: 20
+        id: welle
+      # Sicherheitsnetz bei Dauerbeschuss, bei dem nie Ruhe einkehrt.
+      - trigger: time_pattern
+        minutes: "/5"
+        id: netz
+    conditions:
+      - condition: numeric_state
+        entity_id: sensor.crowdsec_ban_puffer
+        above: 0
+    variables:
+      anzahl: "{{ states('sensor.crowdsec_ban_puffer') | int(0) }}"
+      ips: "{{ state_attr('sensor.crowdsec_ban_puffer', 'ips') or [] }}"
+      scenarios: "{{ state_attr('sensor.crowdsec_ban_puffer', 'scenarios') or [] }}"
+      countries: "{{ state_attr('sensor.crowdsec_ban_puffer', 'countries') or [] }}"
+      welle: "{{ trigger.id == 'welle' or anzahl >= 20 }}"
+    actions:
+      - action: notify.crowdsec_mobile
+        data:
+          title: >-
+            {% if welle %}
+              CrowdSec: Angriffswelle ({{ anzahl }} Bans)
+            {% elif anzahl == 1 %}
+              CrowdSec: neuer Ban
+            {% else %}
+              CrowdSec: {{ anzahl }} neue Bans
+            {% endif %}
+          message: >-
+            {% if anzahl == 1 %}
+              {{ ips | first | default('?') }}
+              {%- if countries %} ({{ countries | first }}){% endif %} -
+              {{ scenarios | first | default('unbekanntes Szenario') }}
+            {% else %}
+              {{ ips | count }} IP{{ 's' if ips | count != 1 }}
+              {%- if countries %} aus {{ countries[:3] | join(', ') }}
+                {%- if countries | count > 3 %} u. a.{% endif %}
+              {%- endif %}.
+              Szenarien: {{ scenarios[:3] | join(', ') | default('unbekannt', true) }}
+              {%- if scenarios | count > 3 %} (+{{ scenarios | count - 3 }}){% endif %}
+            {% endif %}
+          data:
+            # Gleicher Tag = die neue Meldung ersetzt die alte, statt sich
+            # bei einem Schwall zu einem unlesbaren Stapel aufzutuermen.
+            tag: crowdsec-digest
+            group: crowdsec
+            url: /config/integrations/integration/crowdsec
+            push:
+              badge: "{{ states('sensor.crowdsec_active_decisions') | int(0) }}"
+              interruption-level: "{{ 'time-sensitive' if welle else 'active' }}"
+              sound: default
+      # Puffer leeren, damit die naechste Meldung wieder bei null anfaengt.
+      - event: crowdsec_push_flush
+
+  # ---------------------------------------------------------------------
+  # Badge unabhaengig vom Push aktuell halten. Die Badge ist auf iOS ein
+  # absoluter Wert, deshalb wird sie an die Zahl der aktiven Entscheidungen
+  # gekoppelt - so stimmt sie auch, wenn Bans wieder ablaufen.
+  # Das "for" drosselt die stillen Pushes; iOS wirft zu haeufige ohnehin weg.
+  # ---------------------------------------------------------------------
+  - alias: "CrowdSec - Badge synchronisieren (iOS)"
+    id: crowdsec_badge_sync
+    mode: single
+    max_exceeded: silent
+    triggers:
+      - trigger: state
+        entity_id: sensor.crowdsec_active_decisions
+        for: "00:00:30"
+      - trigger: homeassistant
+        event: start
+    conditions:
+      # Nicht bei "unavailable"/"unknown" auf 0 zurueckspringen, wenn die
+      # LAPI gerade nicht erreichbar ist.
+      - condition: template
+        value_template: >-
+          {{ states('sensor.crowdsec_active_decisions')
+             not in ['unknown', 'unavailable', 'none', ''] }}
+    actions:
+      - action: notify.crowdsec_mobile
+        data:
+          # Stille Push ohne sichtbare Meldung - setzt nur die Badge.
+          message: delete_alert
+          data:
+            push:
+              badge: "{{ states('sensor.crowdsec_active_decisions') | int(0) }}"
+
+  # ---------------------------------------------------------------------
+  # Optional: Badge loeschen, wenn die App geoeffnet wurde. Die Companion-App
+  # meldet das als Sensor "sensor.<geraet>_app_zustand" mit Wert "active".
+  # ---------------------------------------------------------------------
+  # - alias: "CrowdSec - Badge beim Oeffnen loeschen"
+  #   id: crowdsec_badge_clear
+  #   mode: single
+  #   triggers:
+  #     - trigger: state
+  #       entity_id: sensor.iphone_app_zustand
+  #       to: "active"
+  #   actions:
+  #     - action: notify.crowdsec_mobile
+  #       data:
+  #         message: delete_alert
+  #         data:
+  #           push:
+  #             badge: 0

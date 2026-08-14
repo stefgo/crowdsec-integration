@@ -87,6 +87,38 @@ automation:
             wegen {{ trigger.event.data.scenario }}
 ```
 
+## Push und Badge auf iOS/iPadOS
+
+Ein fertiges Package für die Home-Assistant-Companion-App liegt unter
+[`examples/ios_push_badge.yaml`](examples/ios_push_badge.yaml). Es schickt eine
+Push-Benachrichtigung bei neuen Bans und hält die Zahl im App-Icon aktuell.
+
+Direkt auf `crowdsec_new_ban` zu pushen ist bei einem Angriffsschwall keine gute
+Idee — 25 Ereignisse pro Zyklus wären 25 Meldungen. Das Package geht deshalb
+über einen Zwischenschritt:
+
+1. Ein trigger-basierter Template-Sensor `sensor.crowdsec_ban_puffer` sammelt
+   die Bans: Zustand ist die Anzahl, in den Attributen stehen die betroffenen
+   IPs, Szenarien und Länder. Kein Ereignis löst hier eine Meldung aus.
+2. Eine Automatisierung schickt daraus **eine** zusammengefasste Meldung, sobald
+   45 Sekunden lang Ruhe war, sofort ab 20 gepufferten Bans, und spätestens alle
+   fünf Minuten, falls der Beschuss nicht abreißt. Danach leert ein
+   `crowdsec_push_flush`-Ereignis den Puffer.
+3. Alle Meldungen teilen sich `tag: crowdsec-digest` — iOS ersetzt damit die
+   vorherige Meldung, statt einen Stapel auf dem Sperrbildschirm anzulegen.
+   Bei einer erkannten Welle steigt die Meldung zusätzlich auf
+   `interruption-level: time-sensitive` und kommt so auch im Fokus-Modus durch.
+
+Die Badge hängt nicht am Puffer, sondern an `sensor.crowdsec_active_decisions`:
+Auf iOS ist die Badge ein absoluter Wert, kein Zähler — an die aktiven
+Entscheidungen gekoppelt zählt sie auch wieder herunter, wenn Bans ablaufen.
+Eine zweite Automatisierung setzt sie per stiller Push (`message: delete_alert`),
+gedrosselt auf höchstens eine Aktualisierung pro 30 Sekunden.
+
+Vor dem Einsatz anzupassen: der Dienstname der Companion-App in der
+Notify-Gruppe (`mobile_app_iphone`) und die Entity-IDs, falls die Instanz nicht
+`crowdsec` heißt.
+
 ## Voraussetzungen auf der CrowdSec-Seite
 
 1. **Prometheus-Endpunkt aktivieren** in `/etc/crowdsec/config.yaml`:
