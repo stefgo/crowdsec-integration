@@ -284,10 +284,3 @@ zusätzlich `hassfest` und die HACS-Validierung (siehe
 ## Lizenz
 
 [MIT](LICENSE).
-
-## Umstieg von einer manuell installierten Vorversion
-
-1.0.0 ist das erste Release. Wer die Integration vorher direkt aus dem
-Repository kopiert hatte, braucht nichts zu tun: Beim ersten Start hebt sie
-bestehende Einträge automatisch auf das aktuelle Schema (Kennung jetzt
-LAPI-Adresse **und** Machine-ID), die neuen Sensoren erscheinen von selbst.
