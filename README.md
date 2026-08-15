@@ -219,6 +219,9 @@ install it, restart Home Assistant.
 
 Then go to *Settings → Devices & services → Add integration → CrowdSec*.
 
+What changed between versions is listed in [CHANGELOG.md](CHANGELOG.md); the
+same text is on the release page of each version.
+
 ## Configuration
 
 | Field | Example |
