@@ -46,7 +46,7 @@ def parse_duration(text: str) -> int | None:
         return None
     if amount <= 0:
         return None
-    return max(1, int(round(amount * factor)))
+    return max(1, round(amount * factor))
 
 
 def window_params(window: Window) -> dict[str, str]:

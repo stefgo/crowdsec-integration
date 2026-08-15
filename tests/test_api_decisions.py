@@ -12,7 +12,7 @@ import pytest
 
 pytest.importorskip("aiohttp")
 
-from crowdsec_component.api import (  # noqa: E402
+from crowdsec_component.api import (
     ENDPOINT_BOUNCER,
     CrowdSecAuthError,
     CrowdSecClient,

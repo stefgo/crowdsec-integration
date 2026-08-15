@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from time import monotonic
 from typing import Any
 
@@ -33,13 +33,13 @@ from .const import (
     COUNTER_LINES,
     COUNTER_PARSE_KO,
     COUNTER_PARSE_OK,
+    DECISION_STATUS_ACTIVE,
     DEFAULT_ALERTS_LIMIT,
     DEFAULT_BOUNCER_IDLE_INTERVALS,
     DEFAULT_PARSE_ERROR_THRESHOLD,
     DEFAULT_SCAN_INTERVAL,
     DOMAIN,
     EVENT_NEW_BAN,
-    DECISION_STATUS_ACTIVE,
     ISSUE_ALERTS_TRUNCATED,
     METRIC_ACTIVE_DECISIONS,
     METRIC_BUCKETS,
@@ -208,7 +208,7 @@ class CrowdSecCoordinator(DataUpdateCoordinator[CrowdSecData]):
             previous,
         )
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         if data.reachable:
             data.last_update = now
         else:
@@ -227,9 +227,7 @@ class CrowdSecCoordinator(DataUpdateCoordinator[CrowdSecData]):
         self._update_device_version(data)
         return data
 
-    def _unwrap(
-        self, data: CrowdSecData, result: Any, expected: type
-    ) -> Any | None:
+    def _unwrap(self, data: CrowdSecData, result: Any, expected: type) -> Any | None:
         """Evaluate one result from ``asyncio.gather``.
 
         Expected errors end up as a message in the data (or trigger a reauth);
@@ -267,7 +265,7 @@ class CrowdSecCoordinator(DataUpdateCoordinator[CrowdSecData]):
 
         start_time = metrics.single(METRIC_PROCESS_START)
         if start_time:
-            data.last_restart = datetime.fromtimestamp(start_time, tz=timezone.utc)
+            data.last_restart = datetime.fromtimestamp(start_time, tz=UTC)
 
         active = metrics.total(METRIC_ACTIVE_DECISIONS)
         if active is not None:
@@ -328,7 +326,9 @@ class CrowdSecCoordinator(DataUpdateCoordinator[CrowdSecData]):
         # Without lines in the interval there is no interval ratio — the sensor
         # then shows the ratio over the whole runtime.
         data.parse_error_rate = (
-            interval_rate if interval_rate is not None else error_ratio(parse_ok, parse_ko)
+            interval_rate
+            if interval_rate is not None
+            else error_ratio(parse_ok, parse_ko)
         )
 
     def _apply_alerts(self, data: CrowdSecData, result: AlertResult) -> None:
@@ -482,7 +482,9 @@ class CrowdSecCoordinator(DataUpdateCoordinator[CrowdSecData]):
             if data.lines_per_minute > 0:
                 self._seen_traffic = True
             elif self._seen_traffic:
-                reasons.append("No log lines processed any more — CrowdSec sees nothing")
+                reasons.append(
+                    "No log lines processed any more — CrowdSec sees nothing"
+                )
 
         if data.bouncer_queries_per_minute is not None:
             if data.bouncer_queries_per_minute > 0:

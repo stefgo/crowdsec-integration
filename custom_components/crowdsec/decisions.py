@@ -18,9 +18,10 @@ active decisions and additionally contribute the expired ones.
 from __future__ import annotations
 
 import re
+from collections.abc import Iterable
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
-from typing import Any, Iterable
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from .alerts import parse_timestamp, source_value
 from .const import (
@@ -192,18 +193,21 @@ def build_source_index(alerts: Iterable[dict[str, Any]]) -> dict[str, SourceInfo
         previous = index.get(value)
         count = (previous.alerts if previous else 0) + 1
 
-        if previous is not None and previous.created_at is not None:
-            if created is None or created <= previous.created_at:
-                # Older alert: it only raises the counter.
-                index[value] = SourceInfo(
-                    country=previous.country,
-                    as_name=previous.as_name,
-                    as_number=previous.as_number,
-                    scenario=previous.scenario,
-                    created_at=previous.created_at,
-                    alerts=count,
-                )
-                continue
+        if (
+            previous is not None
+            and previous.created_at is not None
+            and (created is None or created <= previous.created_at)
+        ):
+            # Older alert: it only raises the counter.
+            index[value] = SourceInfo(
+                country=previous.country,
+                as_name=previous.as_name,
+                as_number=previous.as_number,
+                scenario=previous.scenario,
+                created_at=previous.created_at,
+                alerts=count,
+            )
+            continue
 
         index[value] = SourceInfo(
             country=_source_field(alert, "cn"),
@@ -234,7 +238,8 @@ def normalize_decision(
 
     raw_id = raw.get("id")
     decision_id = (
-        int(raw_id) if isinstance(raw_id, (int, float)) and not isinstance(raw_id, bool)
+        int(raw_id)
+        if isinstance(raw_id, (int, float)) and not isinstance(raw_id, bool)
         else None
     )
 
@@ -334,9 +339,11 @@ def history_from_alerts(
 
             duration = _text(decision.get("duration"))
             seconds = parse_go_duration(duration)
-            until = created + timedelta(seconds=seconds) if (
-                created is not None and seconds is not None
-            ) else None
+            until = (
+                created + timedelta(seconds=seconds)
+                if (created is not None and seconds is not None)
+                else None
+            )
             if until is not None and until > now:
                 # Still running, but not in the decision list — the LAPI query
                 # may have failed. Trust the live list and leave it out.
@@ -384,7 +391,7 @@ def build_table(
     include_history: bool = True,
 ) -> list[DecisionRecord]:
     """Everything the card shows, in one list, newest expiry first."""
-    moment = now or datetime.now(timezone.utc)
+    moment = now or datetime.now(UTC)
     alert_list = [alert for alert in alerts if isinstance(alert, dict)]
 
     index = build_source_index(alert_list)

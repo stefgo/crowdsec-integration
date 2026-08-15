@@ -1,0 +1,53 @@
+[tool.ruff]
+# Home Assistant's own setting — staying with it keeps copied snippets and
+# upstream examples from being reformatted on arrival.
+line-length = 88
+target-version = "py313"
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle
+    "F",    # pyflakes
+    "I",    # isort
+    "UP",   # pyupgrade
+    "B",    # bugbear
+    "BLE",  # blind except
+    "SIM",  # simplify
+    "RUF",  # ruff-specific
+]
+ignore = [
+    # The docstrings deliberately explain the "why" in prose; line breaks in
+    # them are a readability decision, not a style violation.
+    "E501",
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["custom_components"]
+# Home Assistant is a third-party import here, but it is the framework — its
+# own repositories separate it out, and so do the existing files.
+known-third-party = ["homeassistant"]
+
+[tool.mypy]
+python_version = "3.13"
+strict = true
+# Checking one module of a package pulls in its ``__init__.py`` — and that one
+# imports Home Assistant. "silent" analyses those files for the types they
+# provide but reports nothing about them.
+follow_imports = "silent"
+# Only the Home-Assistant-free modules. The rest imports homeassistant, which
+# ships no stubs of its own — checking it would mean pulling the whole
+# framework into the type check for very little gain.
+files = [
+    "custom_components/crowdsec/alerts.py",
+    "custom_components/crowdsec/decisions.py",
+    "custom_components/crowdsec/metrics.py",
+    "custom_components/crowdsec/rates.py",
+    "custom_components/crowdsec/timewindow.py",
+    "custom_components/crowdsec/validation.py",
+]
+
+[[tool.mypy.overrides]]
+# Home Assistant ships no stubs and is not installed for this check; voluptuous
+# has none either. Both only appear in the modules that are not checked here.
+module = ["homeassistant.*", "voluptuous.*"]
+ignore_missing_imports = true

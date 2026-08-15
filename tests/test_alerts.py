@@ -5,9 +5,11 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "custom_components" / "crowdsec"))
+sys.path.insert(
+    0, str(Path(__file__).resolve().parents[1] / "custom_components" / "crowdsec")
+)
 
-from alerts import (  # noqa: E402
+from alerts import (
     UNKNOWN,
     alert_id,
     new_bans,
@@ -223,7 +225,9 @@ def test_deferred_bans_stay_new_in_the_next_cycle():
 def test_bans_without_timestamp_do_not_break_the_order():
     alerts = [make_alert(1, ip="192.0.2.1", created_at=None)]
     alerts += [
-        make_alert(index, ip=f"192.0.2.{index}", created_at=f"2026-08-13T10:{index:02d}:00Z")
+        make_alert(
+            index, ip=f"192.0.2.{index}", created_at=f"2026-08-13T10:{index:02d}:00Z"
+        )
         for index in range(2, 5)
     ]
     summary = summarize_alerts(alerts, TOP)

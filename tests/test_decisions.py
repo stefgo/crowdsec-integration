@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from crowdsec_component.decisions import (
     build_source_index,
@@ -14,7 +14,7 @@ from crowdsec_component.decisions import (
     parse_go_duration,
 )
 
-NOW = datetime(2026, 8, 15, 12, 0, tzinfo=timezone.utc)
+NOW = datetime(2026, 8, 15, 12, 0, tzinfo=UTC)
 
 
 def make_decision(
@@ -129,7 +129,7 @@ def test_normalize_prefers_the_until_the_lapi_sends():
         make_decision(until="2026-08-15T18:00:00Z", duration=None), NOW
     )
     assert record is not None
-    assert record.until == datetime(2026, 8, 15, 18, 0, tzinfo=timezone.utc)
+    assert record.until == datetime(2026, 8, 15, 18, 0, tzinfo=UTC)
     assert record.seconds_left == 6 * 3600
 
 
@@ -254,7 +254,9 @@ def test_build_table_sorts_active_first_and_by_remaining_time():
 
 
 def test_as_dict_is_json_ready():
-    record = normalize_decision(make_decision(), NOW, build_source_index([make_alert()]))
+    record = normalize_decision(
+        make_decision(), NOW, build_source_index([make_alert()])
+    )
     assert record is not None
     payload = record.as_dict()
     assert payload["value"] == "192.0.2.1"

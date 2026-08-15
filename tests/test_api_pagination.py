@@ -17,8 +17,8 @@ pytest.importorskip("aiohttp")
 
 # api.py references its neighbouring modules relatively — import it through
 # the package registered in conftest.py, not flat.
-from crowdsec_component.api import CrowdSecClient  # noqa: E402
-from crowdsec_component.timewindow import Window  # noqa: E402
+from crowdsec_component.api import CrowdSecClient
+from crowdsec_component.timewindow import Window
 
 LIMIT = 3
 

@@ -5,9 +5,11 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "custom_components" / "crowdsec"))
+sys.path.insert(
+    0, str(Path(__file__).resolve().parents[1] / "custom_components" / "crowdsec")
+)
 
-from metrics import MetricSet, parse_prometheus  # noqa: E402
+from metrics import MetricSet, parse_prometheus
 
 SAMPLE = """
 # HELP cs_active_decisions Number of active decisions.

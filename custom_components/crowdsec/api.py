@@ -6,7 +6,7 @@ import asyncio
 import hashlib
 import json
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any, NamedTuple
 
 import aiohttp
@@ -97,8 +97,8 @@ def _parse_expiry(raw: Any) -> datetime | None:
     except ValueError:
         return None
     if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=timezone.utc)
-    return parsed.astimezone(timezone.utc)
+        parsed = parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(UTC)
 
 
 class CrowdSecClient:
@@ -165,10 +165,12 @@ class CrowdSecClient:
                         f"Metrics endpoint answered with HTTP {response.status}"
                     )
                 text = await response.text()
-        except asyncio.TimeoutError as err:
+        except TimeoutError as err:
             raise CrowdSecConnectionError("Timeout during the metrics scrape") from err
         except aiohttp.ClientError as err:
-            raise CrowdSecConnectionError(f"Metrics endpoint unreachable: {err}") from err
+            raise CrowdSecConnectionError(
+                f"Metrics endpoint unreachable: {err}"
+            ) from err
 
         if not text.strip():
             raise CrowdSecConnectionError("Metrics endpoint returned an empty response")
@@ -179,7 +181,7 @@ class CrowdSecClient:
     async def _async_token(self, force: bool = False) -> str:
         """Return a valid machine JWT, logging in if necessary."""
         async with self._login_lock:
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             if (
                 not force
                 and self._token is not None
@@ -233,7 +235,7 @@ class CrowdSecClient:
                             "LAPI login did not return JSON — is that really "
                             "CrowdSec answering and not a proxy?"
                         ) from err
-            except asyncio.TimeoutError as err:
+            except TimeoutError as err:
                 raise CrowdSecConnectionError("Timeout during the LAPI login") from err
             except aiohttp.ClientError as err:
                 raise CrowdSecConnectionError(f"LAPI unreachable: {err}") from err
@@ -249,7 +251,7 @@ class CrowdSecClient:
 
             self._token = token
             self._token_expires = _parse_expiry((data or {}).get("expire")) or (
-                datetime.now(timezone.utc) + TOKEN_FALLBACK_TTL
+                datetime.now(UTC) + TOKEN_FALLBACK_TTL
             )
             return token
 
@@ -301,10 +303,8 @@ class CrowdSecClient:
                             f"{body.strip()[:200]}"
                         )
                     return await response.json(content_type=None)
-            except asyncio.TimeoutError as err:
-                raise CrowdSecConnectionError(
-                    f"Timeout on LAPI {path}"
-                ) from err
+            except TimeoutError as err:
+                raise CrowdSecConnectionError(f"Timeout on LAPI {path}") from err
             except aiohttp.ClientError as err:
                 raise CrowdSecConnectionError(f"LAPI {path} failed: {err}") from err
 
@@ -390,7 +390,7 @@ class CrowdSecClient:
         The LAPI offers no way to create a decision on its own — it always
         hangs off an alert. That is exactly what ``cscli decisions add`` does.
         """
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
         scenario = f"manual '{reason}' from 'hass'"
         alert = {
             "scenario": scenario,
@@ -512,7 +512,7 @@ class CrowdSecClient:
                         f"LAPI /v1/decisions answered with HTTP {response.status}"
                     )
                 data = await response.json(content_type=None)
-        except asyncio.TimeoutError as err:
+        except TimeoutError as err:
             raise CrowdSecConnectionError("Timeout on /v1/decisions") from err
         except aiohttp.ClientError as err:
             raise CrowdSecConnectionError(f"/v1/decisions failed: {err}") from err

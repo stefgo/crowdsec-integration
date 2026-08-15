@@ -8,9 +8,10 @@ running instance. The coordinator only puts the results on its data class.
 from __future__ import annotations
 
 from collections import Counter
+from collections.abc import Iterable
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
-from typing import Any, Iterable
+from datetime import UTC, datetime
+from typing import Any
 
 # An alert without a usable source gets this key so that it does not disappear
 # under the empty string in the distributions.
@@ -35,8 +36,8 @@ def parse_timestamp(raw: Any) -> datetime | None:
     except ValueError:
         return None
     if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=timezone.utc)
-    return parsed.astimezone(timezone.utc)
+        parsed = parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(UTC)
 
 
 def alert_id(alert: dict[str, Any]) -> str | None:
@@ -137,18 +138,12 @@ class AlertSummary:
         return self.top_sources[0]["ip"] if self.top_sources else None
 
 
-def _ranked(
-    counter: Counter[str], key: str, limit: int
-) -> list[dict[str, Any]]:
+def _ranked(counter: Counter[str], key: str, limit: int) -> list[dict[str, Any]]:
     """The most frequent entries as a list of dicts for the attributes."""
-    return [
-        {key: name, "alerts": count} for name, count in counter.most_common(limit)
-    ]
+    return [{key: name, "alerts": count} for name, count in counter.most_common(limit)]
 
 
-def summarize_alerts(
-    alerts: Iterable[dict[str, Any]], top_count: int
-) -> AlertSummary:
+def summarize_alerts(alerts: Iterable[dict[str, Any]], top_count: int) -> AlertSummary:
     """Evaluate a list of alerts.
 
     Simulated alerts are left out throughout: they describe what CrowdSec
@@ -237,9 +232,7 @@ def new_bans(summary: AlertSummary, known_ids: set[str] | None) -> list[BanRecor
     return [ban for ban in summary.bans if ban.alert_id not in known_ids]
 
 
-def partition_bans(
-    bans: list[BanRecord], cap: int
-) -> tuple[list[BanRecord], set[str]]:
+def partition_bans(bans: list[BanRecord], cap: int) -> tuple[list[BanRecord], set[str]]:
     """Split a batch of new bans into "report now" and "report later".
 
     A burst must not flood the event bus, but nothing may be lost either. The
@@ -255,7 +248,7 @@ def partition_bans(
 
     ordered = sorted(
         bans,
-        key=lambda ban: ban.created_at or datetime.min.replace(tzinfo=timezone.utc),
+        key=lambda ban: ban.created_at or datetime.min.replace(tzinfo=UTC),
         reverse=True,
     )
     return ordered[:cap], {ban.alert_id for ban in ordered[cap:]}

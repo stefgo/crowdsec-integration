@@ -5,9 +5,11 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "custom_components" / "crowdsec"))
+sys.path.insert(
+    0, str(Path(__file__).resolve().parents[1] / "custom_components" / "crowdsec")
+)
 
-from timewindow import (  # noqa: E402
+from timewindow import (
     Window,
     parse_duration,
     split_window,

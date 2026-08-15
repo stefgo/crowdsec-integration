@@ -11,9 +11,7 @@ import re
 import sys
 from pathlib import Path
 
-COMPONENT = (
-    Path(__file__).resolve().parents[1] / "custom_components" / "crowdsec"
-)
+COMPONENT = Path(__file__).resolve().parents[1] / "custom_components" / "crowdsec"
 sys.path.insert(0, str(COMPONENT))
 
 import const  # noqa: E402
@@ -34,7 +32,7 @@ def _keys(node, prefix=""):
 
 
 def test_version_comes_from_the_manifest():
-    assert const.INTEGRATION_VERSION == MANIFEST["version"]
+    assert MANIFEST["version"] == const.INTEGRATION_VERSION
     assert const.INTEGRATION_VERSION != "0.0.0"
 
 
@@ -48,7 +46,7 @@ def test_user_agent_is_parseable_by_crowdsec():
 
 
 def test_domain_matches_manifest():
-    assert const.DOMAIN == MANIFEST["domain"]
+    assert MANIFEST["domain"] == const.DOMAIN
 
 
 def test_translations_exist():
@@ -59,8 +57,12 @@ def test_translations_cover_all_strings():
     expected = _keys(STRINGS)
     for path in TRANSLATIONS:
         actual = _keys(json.loads(path.read_text(encoding="utf-8")))
-        assert not expected - actual, f"{path.name} is missing: {sorted(expected - actual)}"
-        assert not actual - expected, f"{path.name} has extra: {sorted(actual - expected)}"
+        assert not expected - actual, (
+            f"{path.name} is missing: {sorted(expected - actual)}"
+        )
+        assert not actual - expected, (
+            f"{path.name} has extra: {sorted(actual - expected)}"
+        )
 
 
 # The same expression hassfest uses to check translations. It already triggers
@@ -81,7 +83,9 @@ def test_no_html_in_translations():
     for path in [COMPONENT / "strings.json", *TRANSLATIONS]:
         content = json.loads(path.read_text(encoding="utf-8"))
         for where, text in _values(content):
-            assert not HTML_PATTERN.search(text), f"{path.name}: HTML in {where}: {text}"
+            assert not HTML_PATTERN.search(text), (
+                f"{path.name}: HTML in {where}: {text}"
+            )
 
 
 def test_placeholders_are_balanced():

@@ -27,6 +27,20 @@ jobs:
         with:
           category: integration
 
+  lint:
+    name: ruff and mypy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: pip install -r requirements_test.txt
+      - run: ruff check .
+      - run: ruff format --check .
+      # Only the Home-Assistant-free modules; see pyproject.toml.
+      - run: mypy
+
   tests:
     name: pytest
     runs-on: ubuntu-latest
@@ -37,3 +51,32 @@ jobs:
           python-version: "3.13"
       - run: pip install -r requirements_test.txt
       - run: pytest -q
+
+  tests-ha:
+    name: pytest (with Home Assistant)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: pip install -r requirements_test_ha.txt
+      # Its own invocation: these tests need the real Home Assistant fixtures,
+      # whereas pytest.ini is set up for the framework-free suite.
+      - run: pytest tests/ha -q -p no:cacheprovider --no-cov -c /dev/null
+
+  card:
+    name: card
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: card/package-lock.json
+      - run: npm --prefix card ci
+      - run: npm --prefix card test
+      # The build is not committed, so a broken rollup config would otherwise
+      # only surface during a release.
+      - run: npm --prefix card run build

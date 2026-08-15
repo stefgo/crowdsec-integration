@@ -1,0 +1,23 @@
+version: 2
+
+updates:
+  # The workflows pin action versions; without this they quietly age until a
+  # runner drops support for them.
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: "ci"
+
+  # The card is the only place with third-party dependencies — the integration
+  # itself has an empty "requirements" list on purpose.
+  - package-ecosystem: npm
+    directory: "/card"
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: "chore"
+    groups:
+      rollup:
+        patterns: ["rollup", "@rollup/*"]

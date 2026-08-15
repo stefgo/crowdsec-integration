@@ -7,7 +7,6 @@ from typing import Any
 from urllib.parse import urlsplit
 
 import voluptuous as vol
-
 from homeassistant.config_entries import ConfigFlow, ConfigFlowResult, OptionsFlow
 from homeassistant.const import (
     CONF_NAME,
@@ -84,7 +83,9 @@ STEP_USER_SCHEMA = vol.Schema(
         vol.Required(
             CONF_METRICS_URL, default=f"http://localhost:{DEFAULT_METRICS_PORT}/metrics"
         ): cv.string,
-        vol.Required(CONF_LAPI_URL, default=f"http://localhost:{DEFAULT_LAPI_PORT}"): cv.string,
+        vol.Required(
+            CONF_LAPI_URL, default=f"http://localhost:{DEFAULT_LAPI_PORT}"
+        ): cv.string,
         vol.Required(CONF_MACHINE_ID): cv.string,
         vol.Required(CONF_MACHINE_PASSWORD): SECRET_SELECTOR,
         vol.Optional(CONF_BOUNCER_API_KEY): SECRET_SELECTOR,
@@ -114,9 +115,7 @@ AUTH_ERRORS = {
 }
 
 
-async def _async_validate(
-    hass, user_input: dict[str, Any]
-) -> tuple[str, str] | None:
+async def _async_validate(hass, user_input: dict[str, Any]) -> tuple[str, str] | None:
     """Test the connection.
 
     Returns ``(error_key, plain text)`` or ``None`` on success. The plain text
@@ -132,7 +131,7 @@ async def _async_validate(
     except CrowdSecConnectionError as err:
         _LOGGER.debug("Validation failed: %s", err)
         return "cannot_connect", str(err)
-    except Exception as err:  # noqa: BLE001 - the unexpected must not break the flow
+    except Exception as err:
         _LOGGER.exception("Unexpected error while validating the CrowdSec instance")
         return "unknown", f"{type(err).__name__}: {err}"
     return None
@@ -181,9 +180,7 @@ class CrowdSecConfigFlow(ConfigFlow, domain=DOMAIN):
             description_placeholders={"error_detail": detail},
         )
 
-    async def async_step_reauth(
-        self, entry_data: dict[str, Any]
-    ) -> ConfigFlowResult:
+    async def async_step_reauth(self, entry_data: dict[str, Any]) -> ConfigFlowResult:
         """Triggered when the LAPI rejects the credentials."""
         self._reauth_data = dict(entry_data)
         return await self.async_step_reauth_confirm()

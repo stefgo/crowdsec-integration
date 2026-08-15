@@ -5,9 +5,11 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "custom_components" / "crowdsec"))
+sys.path.insert(
+    0, str(Path(__file__).resolve().parents[1] / "custom_components" / "crowdsec")
+)
 
-from rates import RateTracker, error_ratio  # noqa: E402
+from rates import RateTracker, error_ratio
 
 START = 1_700_000_000.0
 
