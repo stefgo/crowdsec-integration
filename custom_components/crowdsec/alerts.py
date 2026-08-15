@@ -235,3 +235,27 @@ def new_bans(summary: AlertSummary, known_ids: set[str] | None) -> list[BanRecor
     if known_ids is None:
         return []
     return [ban for ban in summary.bans if ban.alert_id not in known_ids]
+
+
+def partition_bans(
+    bans: list[BanRecord], cap: int
+) -> tuple[list[BanRecord], set[str]]:
+    """Split a batch of new bans into "report now" and "report later".
+
+    A burst must not flood the event bus, but nothing may be lost either. The
+    most recent bans are reported first — a notification about the ongoing
+    attack is worth more than chronological order — and the identifiers of the
+    remainder are returned so that the caller can keep them out of its set of
+    known alerts.
+    """
+    if cap < 1:
+        return [], {ban.alert_id for ban in bans}
+    if len(bans) <= cap:
+        return list(bans), set()
+
+    ordered = sorted(
+        bans,
+        key=lambda ban: ban.created_at or datetime.min.replace(tzinfo=timezone.utc),
+        reverse=True,
+    )
+    return ordered[:cap], {ban.alert_id for ban in ordered[cap:]}

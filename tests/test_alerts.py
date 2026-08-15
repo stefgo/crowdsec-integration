@@ -12,6 +12,7 @@ from alerts import (  # noqa: E402
     alert_id,
     new_bans,
     parse_timestamp,
+    partition_bans,
     summarize_alerts,
 )
 
@@ -158,6 +159,79 @@ def test_nothing_new_when_alerts_repeat():
     first = summarize_alerts([make_alert(1)], TOP)
     second = summarize_alerts([make_alert(1)], TOP)
     assert new_bans(second, first.seen_ids) == []
+
+
+def test_small_batch_is_reported_completely():
+    summary = summarize_alerts(
+        [make_alert(index, ip=f"192.0.2.{index}") for index in range(1, 4)], TOP
+    )
+    report, deferred = partition_bans(summary.bans, 25)
+    assert len(report) == 3
+    assert deferred == set()
+
+
+def test_burst_is_capped_and_the_rest_is_deferred():
+    alerts = [
+        make_alert(
+            index,
+            ip=f"192.0.2.{index}",
+            created_at=f"2026-08-13T10:{index:02d}:00Z",
+        )
+        for index in range(1, 11)
+    ]
+    summary = summarize_alerts(alerts, TOP)
+
+    report, deferred = partition_bans(summary.bans, 4)
+    # The most recent four go out, the six older ones are held back.
+    assert [ban.ip for ban in report] == [
+        "192.0.2.10",
+        "192.0.2.9",
+        "192.0.2.8",
+        "192.0.2.7",
+    ]
+    assert len(deferred) == 6
+    # Nothing is lost: reported and deferred together are the whole batch.
+    assert {ban.alert_id for ban in report} | deferred == {
+        ban.alert_id for ban in summary.bans
+    }
+
+
+def test_deferred_bans_stay_new_in_the_next_cycle():
+    alerts = [
+        make_alert(
+            index,
+            ip=f"192.0.2.{index}",
+            created_at=f"2026-08-13T10:{index:02d}:00Z",
+        )
+        for index in range(1, 11)
+    ]
+    summary = summarize_alerts(alerts, TOP)
+    report, deferred = partition_bans(summary.bans, 4)
+
+    # This is what the coordinator remembers: everything seen except the ones
+    # it held back.
+    known = summary.seen_ids - deferred
+
+    # Same alerts again in the following cycle — exactly the deferred ones must
+    # come up again, and they must not be reported twice.
+    second = summarize_alerts(alerts, TOP)
+    fresh = new_bans(second, known)
+    assert {ban.alert_id for ban in fresh} == deferred
+    assert not {ban.alert_id for ban in fresh} & {ban.alert_id for ban in report}
+
+
+def test_bans_without_timestamp_do_not_break_the_order():
+    alerts = [make_alert(1, ip="192.0.2.1", created_at=None)]
+    alerts += [
+        make_alert(index, ip=f"192.0.2.{index}", created_at=f"2026-08-13T10:{index:02d}:00Z")
+        for index in range(2, 5)
+    ]
+    summary = summarize_alerts(alerts, TOP)
+    report, deferred = partition_bans(summary.bans, 2)
+    assert len(report) == 2
+    assert len(deferred) == 2
+    # The one without a timestamp sorts to the very back, not to the front.
+    assert "192.0.2.1" not in [ban.ip for ban in report]
 
 
 def test_alert_id_falls_back_to_fingerprint():

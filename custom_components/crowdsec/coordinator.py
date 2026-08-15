@@ -17,7 +17,7 @@ from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
-from .alerts import AlertSummary, new_bans, summarize_alerts
+from .alerts import AlertSummary, new_bans, partition_bans, summarize_alerts
 from .api import (
     ENDPOINT_LAPI,
     AlertResult,
@@ -64,7 +64,8 @@ ROUTE_LABELS = ("endpoint", "route", "path")
 
 # More ban events per cycle point to a catch-up (the instance was away for a
 # long time, the alert window fills up all at once). In that case a single
-# summary message is better than hundreds of events flooding the bus.
+# summary message is better than hundreds of events flooding the bus. The
+# remainder is not dropped but carried over into the following cycles.
 MAX_BAN_EVENTS_PER_CYCLE = 25
 
 
@@ -334,27 +335,33 @@ class CrowdSecCoordinator(DataUpdateCoordinator[CrowdSecData]):
         data.top_attackers = summary.top_sources
         data.top_attacker = summary.top_source
 
-        self._fire_ban_events(summary)
-        self._known_alert_ids = summary.seen_ids
+        deferred = self._fire_ban_events(summary)
+        # Bans held back by the per-cycle cap must not count as known, otherwise
+        # ``new_bans`` would filter them out for good and their event would
+        # never be fired.
+        self._known_alert_ids = summary.seen_ids - deferred
         self._report_truncation(result.truncated)
 
-    def _fire_ban_events(self, summary: AlertSummary) -> None:
-        """Fire one event per newly detected ban."""
+    def _fire_ban_events(self, summary: AlertSummary) -> set[str]:
+        """Fire one event per newly detected ban.
+
+        Returns the identifiers of the bans that the cap held back. They stay
+        unknown and are therefore picked up again in one of the next cycles.
+        """
         fresh = new_bans(summary, self._known_alert_ids)
         if not fresh:
-            return
-        if len(fresh) > MAX_BAN_EVENTS_PER_CYCLE:
+            return set()
+
+        total = len(fresh)
+        fresh, deferred = partition_bans(fresh, MAX_BAN_EVENTS_PER_CYCLE)
+        if deferred:
             _LOGGER.info(
-                "%d new bans in one cycle — only the %d most recent ones are "
-                "reported as events",
+                "%d new bans in one cycle — %d are reported now, %d follow in "
+                "the next cycles",
+                total,
                 len(fresh),
-                MAX_BAN_EVENTS_PER_CYCLE,
+                len(deferred),
             )
-            fresh.sort(
-                key=lambda ban: ban.created_at or datetime.min.replace(tzinfo=timezone.utc),
-                reverse=True,
-            )
-            fresh = fresh[:MAX_BAN_EVENTS_PER_CYCLE]
 
         entry_id = self.config_entry.entry_id if self.config_entry else None
         for ban in fresh:
@@ -362,6 +369,8 @@ class CrowdSecCoordinator(DataUpdateCoordinator[CrowdSecData]):
                 EVENT_NEW_BAN,
                 {"entry_id": entry_id, "instance": self.name, **ban.as_event_data()},
             )
+
+        return deferred
 
     def _report_truncation(self, truncated: bool) -> None:
         """Create a repair issue when the 24h numbers are incomplete."""
