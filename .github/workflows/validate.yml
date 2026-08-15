@@ -5,8 +5,8 @@ on:
     branches: [main]
   pull_request:
   schedule:
-    # Wöchentlich: hassfest und HACS ändern ihre Regeln, ohne dass hier etwas
-    # committet wird — ein grüner Stand von gestern sagt sonst wenig.
+    # Weekly: hassfest and HACS change their rules without anything being
+    # committed here — yesterday's green run says little otherwise.
     - cron: "0 6 * * 1"
   workflow_dispatch:
 

@@ -1,4 +1,4 @@
-"""Die Messwerte einer CrowdSec-Instanz."""
+"""The measured values of a CrowdSec instance."""
 
 from __future__ import annotations
 
@@ -20,23 +20,23 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from .coordinator import CrowdSecConfigEntry, CrowdSecData
 from .entity import CrowdSecEntity
 
-# Zustandswerte in Home Assistant sind auf 255 Zeichen begrenzt.
+# State values in Home Assistant are limited to 255 characters.
 MAX_STATE_LENGTH = 255
 
-# Sprachneutrale Einheit für die Raten: Home Assistant übersetzt
-# ``native_unit_of_measurement`` nicht, ein deutsches „Zeilen/min" stünde also
-# auch in der englischen Oberfläche. Was gezählt wird, sagt der Entitätsname.
+# Language-neutral unit for the rates: Home Assistant does not translate
+# ``native_unit_of_measurement``, so a localised "lines/min" would show up in
+# every language. What is counted is stated by the entity name.
 UNIT_PER_MINUTE = "1/min"
 UNIT_LINES = "lines"
 
 
 @dataclass(frozen=True, kw_only=True)
 class CrowdSecSensorDescription(SensorEntityDescription):
-    """Beschreibung mit Wert- und Attributfunktion."""
+    """Description with a value and an attribute function."""
 
     value_fn: Callable[[CrowdSecData], float | int | str | datetime | None]
     attrs_fn: Callable[[CrowdSecData], dict[str, Any]] | None = None
-    # Zeitstempel bleiben auch bei einem fehlgeschlagenen Scrape gültig.
+    # Timestamps stay valid even when a scrape fails.
     survives_outage: bool = False
 
 
@@ -144,9 +144,9 @@ SENSORS: tuple[CrowdSecSensorDescription, ...] = (
         translation_key="lines_total",
         icon="mdi:file-document-outline",
         native_unit_of_measurement=UNIT_LINES,
-        # Der Zähler läuft seit dem Start des Dienstes und springt bei einem
-        # Neustart zurück; TOTAL_INCREASING fängt genau das ab und liefert
-        # damit brauchbare Tages- und Wochensummen.
+        # The counter runs since the start of the service and jumps back on a
+        # restart; TOTAL_INCREASING absorbs exactly that and therefore yields
+        # usable daily and weekly sums.
         state_class=SensorStateClass.TOTAL_INCREASING,
         entity_category=EntityCategory.DIAGNOSTIC,
         suggested_display_precision=0,
@@ -187,7 +187,7 @@ async def async_setup_entry(
     entry: CrowdSecConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
-    """Lege die Sensoren einer Instanz an."""
+    """Create the sensors of an instance."""
     coordinator = entry.runtime_data
     async_add_entities(
         CrowdSecSensor(coordinator, entry, description) for description in SENSORS
@@ -195,17 +195,17 @@ async def async_setup_entry(
 
 
 class CrowdSecSensor(CrowdSecEntity, SensorEntity):
-    """Ein einzelner Messwert."""
+    """A single measured value."""
 
     entity_description: CrowdSecSensorDescription
 
     @property
     def available(self) -> bool:
-        """Diagnosewerte bleiben verfügbar, Messwerte nicht.
+        """Diagnostic values stay available, measured values do not.
 
-        Bei einem fehlgeschlagenen Scrape sollen Zähler und Raten nicht mit
-        alten Werten weiterleben — „Letzte Aktualisierung" und „Letzter
-        Neustart" dagegen schon, sie liefern genau dann den Kontext.
+        When a scrape fails, counters and rates must not live on with stale
+        values — "Last update" and "Last restart" should, because that is
+        exactly when they provide the context.
         """
         if self.coordinator.data is None:
             return False

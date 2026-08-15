@@ -1,4 +1,4 @@
-"""Die CrowdSec-Integration für Home Assistant."""
+"""The CrowdSec integration for Home Assistant."""
 
 from __future__ import annotations
 
@@ -32,7 +32,7 @@ def build_client(
     verify_ssl: bool = True,
     timeout: int = DEFAULT_TIMEOUT,
 ) -> CrowdSecClient:
-    """Erzeuge einen Client aus den Entry-Daten (auch vom Config-Flow genutzt)."""
+    """Build a client from the entry data (also used by the config flow)."""
     return CrowdSecClient(
         async_get_clientsession(hass, verify_ssl=verify_ssl),
         metrics_url=data[CONF_METRICS_URL],
@@ -46,16 +46,16 @@ def build_client(
 
 
 async def async_migrate_entry(hass: HomeAssistant, entry: CrowdSecConfigEntry) -> bool:
-    """Hebe ältere Einträge auf das aktuelle Schema.
+    """Migrate older entries to the current schema.
 
-    Version 1 hat eine Instanz allein über ihre LAPI-Adresse identifiziert.
-    Zwei Engines hinter derselben Adresse — etwa über unterschiedliche Tunnel
-    oder mit getrennten Machines — ließen sich damit nicht parallel einrichten.
-    Ab Version 2 gehört die Machine-ID zur Kennung.
+    Version 1 identified an instance solely by its LAPI address. Two engines
+    behind the same address — via different tunnels, say, or with separate
+    machines — could therefore not be set up side by side. From version 2 on,
+    the machine ID is part of the identifier.
     """
     if entry.version > 2:
-        # Herabgestufte Integration: der Eintrag stammt aus einer neueren
-        # Version und darf nicht angefasst werden.
+        # Downgraded integration: the entry comes from a newer version and
+        # must not be touched.
         return False
 
     if entry.version == 1:
@@ -64,13 +64,13 @@ async def async_migrate_entry(hass: HomeAssistant, entry: CrowdSecConfigEntry) -
         hass.config_entries.async_update_entry(
             entry, unique_id=build_unique_id(entry.data), version=2
         )
-        _LOGGER.debug("Config-Entry %s auf Version 2 gehoben", entry.title)
+        _LOGGER.debug("Migrated config entry %s to version 2", entry.title)
 
     return True
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: CrowdSecConfigEntry) -> bool:
-    """Richte eine CrowdSec-Instanz ein."""
+    """Set up a CrowdSec instance."""
     verify_ssl = entry.data.get(CONF_VERIFY_SSL, True)
     timeout = int(entry.options.get(CONF_TIMEOUT, DEFAULT_TIMEOUT))
     client = build_client(hass, dict(entry.data), verify_ssl, timeout)
@@ -86,15 +86,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: CrowdSecConfigEntry) -> 
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: CrowdSecConfigEntry) -> bool:
-    """Entferne eine Instanz."""
+    """Remove an instance."""
     unloaded = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if unloaded and len(hass.config_entries.async_loaded_entries(DOMAIN)) <= 1:
-        # Der eigene Eintrag zählt hier noch mit — bleibt kein weiterer übrig,
-        # sind die Dienste ohne Ziel.
+        # The entry being unloaded still counts here — if none is left, the
+        # services have no target.
         async_unload_services(hass)
     return unloaded
 
 
 async def async_reload_entry(hass: HomeAssistant, entry: CrowdSecConfigEntry) -> None:
-    """Nach Optionsänderung neu laden (Intervall und Schwellwerte)."""
+    """Reload after an options change (interval and thresholds)."""
     await hass.config_entries.async_reload(entry.entry_id)

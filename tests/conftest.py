@@ -1,11 +1,11 @@
-"""Gemeinsame Testeinrichtung.
+"""Shared test setup.
 
-Die Module der Integration verweisen mit relativen Importen aufeinander
-(``from .const import …``). Flach geladen scheitert das, und über
-``custom_components.crowdsec`` geladen zöge es ``__init__.py`` samt Home
-Assistant herein. Deshalb wird das Verzeichnis hier als eigenes Paket
-angemeldet, ohne dessen ``__init__.py`` auszuführen: Relative Importe lösen
-sich damit auf, die HA-Abhängigkeit bleibt außen vor.
+The modules of the integration reference each other with relative imports
+(``from .const import …``). Loaded flat that fails, and loaded via
+``custom_components.crowdsec`` it would pull in ``__init__.py`` together with
+Home Assistant. The directory is therefore registered here as a package of its
+own, without executing its ``__init__.py``: relative imports resolve, while the
+HA dependency stays out.
 """
 
 from __future__ import annotations
@@ -16,13 +16,13 @@ from pathlib import Path
 
 COMPONENT = Path(__file__).resolve().parents[1] / "custom_components" / "crowdsec"
 
-# Name bewusst nicht "crowdsec": Er darf nicht mit einem echten Paket
-# kollidieren, das jemand parallel installiert hat.
+# Deliberately not named "crowdsec": it must not collide with a real package
+# somebody has installed alongside.
 PACKAGE = "crowdsec_component"
 
 
 def register_package() -> None:
-    """Melde das Komponentenverzeichnis als importierbares Paket an."""
+    """Register the component directory as an importable package."""
     if PACKAGE in sys.modules:
         return
     package = types.ModuleType(PACKAGE)
@@ -32,7 +32,7 @@ def register_package() -> None:
 
 register_package()
 
-# Daneben bleibt der flache Import erhalten — die älteren Testmodule laden
-# rates und metrics direkt.
+# The flat import stays available alongside — the older test modules load
+# rates and metrics directly.
 if str(COMPONENT) not in sys.path:
     sys.path.insert(0, str(COMPONENT))

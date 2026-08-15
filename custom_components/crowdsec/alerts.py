@@ -1,8 +1,8 @@
-"""Auswertung der Alert-Objekte der LAPI.
+"""Evaluation of the LAPI alert objects.
 
-Bewusst frei von Home-Assistant-Importen: Die Auswertung ist reine Logik über
-die JSON-Antwort von ``/v1/alerts`` und lässt sich damit ohne laufende Instanz
-testen. Der Coordinator legt nur noch die Ergebnisse auf seine Datenklasse.
+Deliberately free of Home Assistant imports: the evaluation is pure logic over
+the JSON response of ``/v1/alerts`` and can therefore be tested without a
+running instance. The coordinator only puts the results on its data class.
 """
 
 from __future__ import annotations
@@ -12,13 +12,13 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Iterable
 
-# Ein Alert ohne verwertbare Quelle bekommt diesen Schlüssel, damit er in den
-# Verteilungen nicht unter dem leeren String verschwindet.
+# An alert without a usable source gets this key so that it does not disappear
+# under the empty string in the distributions.
 UNKNOWN = "unknown"
 
 
 def _text(value: Any) -> str | None:
-    """Nicht-leerer String oder ``None`` — die LAPI liefert beides gemischt."""
+    """Non-empty string or ``None`` — the LAPI returns both, mixed."""
     if not isinstance(value, str):
         return None
     stripped = value.strip()
@@ -26,7 +26,7 @@ def _text(value: Any) -> str | None:
 
 
 def parse_timestamp(raw: Any) -> datetime | None:
-    """Parse einen RFC3339-Zeitstempel der LAPI nach UTC."""
+    """Parse an RFC3339 timestamp from the LAPI into UTC."""
     text = _text(raw)
     if text is None:
         return None
@@ -40,12 +40,12 @@ def parse_timestamp(raw: Any) -> datetime | None:
 
 
 def alert_id(alert: dict[str, Any]) -> str | None:
-    """Stabile Kennung eines Alerts.
+    """Stable identifier of an alert.
 
-    Die numerische ``id`` der LAPI ist der Normalfall. Fehlt sie — manche
-    Versionen liefern sie bei gefilterten Abfragen nicht mit —, dient das
-    Tripel aus Zeitpunkt, Szenario und Quelle als Ersatz. Beides zusammen
-    reicht, um denselben Alert über zwei Abfragen hinweg wiederzuerkennen.
+    The numeric ``id`` of the LAPI is the normal case. If it is missing — some
+    versions do not include it in filtered queries — the triple of timestamp,
+    scenario and source serves as a substitute. Together this is enough to
+    recognise the same alert across two queries.
     """
     raw_id = alert.get("id")
     if isinstance(raw_id, (int, float)) and not isinstance(raw_id, bool):
@@ -62,7 +62,7 @@ def alert_id(alert: dict[str, Any]) -> str | None:
 
 
 def source_value(alert: dict[str, Any]) -> str | None:
-    """Die Quelle eines Alerts — in aller Regel die Angreifer-IP."""
+    """The source of an alert — as a rule the attacker IP."""
     source = alert.get("source")
     if not isinstance(source, dict):
         return None
@@ -78,7 +78,7 @@ def _source_field(alert: dict[str, Any], key: str) -> str | None:
 
 @dataclass(frozen=True, slots=True)
 class BanRecord:
-    """Ein Ban, wie er als Event an den Bus geht."""
+    """A ban as it goes onto the bus as an event."""
 
     alert_id: str
     ip: str | None
@@ -91,7 +91,7 @@ class BanRecord:
     created_at: datetime | None
 
     def as_event_data(self) -> dict[str, Any]:
-        """Flaches Dict für ``hass.bus.async_fire``."""
+        """Flat dict for ``hass.bus.async_fire``."""
         return {
             "alert_id": self.alert_id,
             "ip": self.ip,
@@ -107,7 +107,7 @@ class BanRecord:
 
 @dataclass(slots=True)
 class AlertSummary:
-    """Alles, was sich aus einem Satz Alerts ableiten lässt."""
+    """Everything that can be derived from a set of alerts."""
 
     alerts: int = 0
     ban_decisions: int = 0
@@ -119,8 +119,8 @@ class AlertSummary:
     top_sources: list[dict[str, Any]] = field(default_factory=list)
 
     latest_alert: datetime | None = None
-    # Kennungen aller gewerteten Alerts — Grundlage der Neuerkennung im
-    # nächsten Zyklus.
+    # Identifiers of all evaluated alerts — the basis for detecting new ones in
+    # the next cycle.
     seen_ids: set[str] = field(default_factory=set)
     bans: list[BanRecord] = field(default_factory=list)
 
@@ -140,7 +140,7 @@ class AlertSummary:
 def _ranked(
     counter: Counter[str], key: str, limit: int
 ) -> list[dict[str, Any]]:
-    """Die häufigsten Einträge als Liste von Dicts für die Attribute."""
+    """The most frequent entries as a list of dicts for the attributes."""
     return [
         {key: name, "alerts": count} for name, count in counter.most_common(limit)
     ]
@@ -149,10 +149,10 @@ def _ranked(
 def summarize_alerts(
     alerts: Iterable[dict[str, Any]], top_count: int
 ) -> AlertSummary:
-    """Werte eine Alert-Liste aus.
+    """Evaluate a list of alerts.
 
-    Simulierte Alerts bleiben durchgehend außen vor: Sie beschreiben, was
-    CrowdSec *getan hätte*, und würden jede Kennzahl verfälschen.
+    Simulated alerts are left out throughout: they describe what CrowdSec
+    *would have done* and would distort every metric.
     """
     summary = AlertSummary()
     scenarios: Counter[str] = Counter()
@@ -196,8 +196,8 @@ def summarize_alerts(
             if ip is not None:
                 banned.add(ip)
             if ban_seen or identifier is None:
-                # Pro Alert genau ein Ban-Event: mehrere Decisions am selben
-                # Alert sind derselbe Vorgang (z. B. IP und Range).
+                # Exactly one ban event per alert: several decisions on the
+                # same alert are the same incident (e.g. IP and range).
                 continue
             ban_seen = True
             summary.bans.append(
@@ -214,7 +214,7 @@ def summarize_alerts(
                 )
             )
 
-    # Die Quelle „unknown" ist ein Sammelposten und keine eigene Adresse.
+    # The source "unknown" is a catch-all bucket, not an address of its own.
     summary.unique_sources = len([name for name in sources if name != UNKNOWN])
     summary.banned_sources = len(banned)
 
@@ -226,11 +226,11 @@ def summarize_alerts(
 
 
 def new_bans(summary: AlertSummary, known_ids: set[str] | None) -> list[BanRecord]:
-    """Die Bans, die seit dem letzten Zyklus dazugekommen sind.
+    """The bans that have been added since the last cycle.
 
-    ``known_ids is None`` heißt „erster Zyklus": Dann gilt kein Ban als neu.
-    Sonst würde jeder Neustart von Home Assistant die letzten 24 Stunden auf
-    einen Schlag als Events ausschütten.
+    ``known_ids is None`` means "first cycle": then no ban counts as new.
+    Otherwise every restart of Home Assistant would dump the last 24 hours
+    onto the bus as events all at once.
     """
     if known_ids is None:
         return []

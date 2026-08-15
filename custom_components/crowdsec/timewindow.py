@@ -1,25 +1,25 @@
-"""Zeitfenster für die Alert-Abfrage.
+"""Time windows for the alert query.
 
-Die LAPI kennt keine Pagination — sie schneidet bei ``limit`` ab. Um trotzdem
-an alle Alerts eines Zeitraums zu kommen, wird ein abgeschnittenes Fenster
-halbiert und in Teilen erneut abgefragt. Die Rechnerei dahinter ist reine
-Arithmetik und liegt deshalb hier, getrennt vom HTTP-Client.
+The LAPI has no pagination — it truncates at ``limit``. To get all alerts of a
+period anyway, a truncated window is halved and queried again in parts. The
+maths behind that is pure arithmetic and therefore lives here, separate from
+the HTTP client.
 """
 
 from __future__ import annotations
 
 from typing import NamedTuple
 
-# Feiner als eine Minute lohnt das Aufteilen nicht: Wenn in 60 Sekunden mehr
-# Alerts anfallen als das Limit erlaubt, hilft nur ein höheres Limit.
+# Splitting finer than a minute is not worth it: if more alerts occur within
+# 60 seconds than the limit allows, only a higher limit helps.
 MIN_WINDOW_MINUTES = 1
 
 
 class Window(NamedTuple):
-    """Ein halboffener Zeitraum, in Minuten rückwärts von jetzt gerechnet.
+    """A half-open period, counted in minutes backwards from now.
 
-    ``start`` liegt weiter in der Vergangenheit als ``end`` — ``Window(1440, 0)``
-    sind die letzten 24 Stunden.
+    ``start`` lies further in the past than ``end`` — ``Window(1440, 0)`` is
+    the last 24 hours.
     """
 
     start: int
@@ -31,7 +31,7 @@ class Window(NamedTuple):
 
 
 def parse_duration(text: str) -> int | None:
-    """Übersetze eine CrowdSec-Dauer wie ``24h`` oder ``90m`` in Minuten."""
+    """Translate a CrowdSec duration such as ``24h`` or ``90m`` into minutes."""
     value = text.strip().lower()
     if not value:
         return None
@@ -50,10 +50,10 @@ def parse_duration(text: str) -> int | None:
 
 
 def window_params(window: Window) -> dict[str, str]:
-    """Query-Parameter für ``/v1/alerts``.
+    """Query parameters for ``/v1/alerts``.
 
-    ``until`` bleibt beim jüngsten Fenster weg — sonst würden Alerts fehlen,
-    die zwischen zwei Teilabfragen eintreffen.
+    ``until`` is omitted for the most recent window — otherwise alerts that
+    arrive between two partial queries would be missing.
     """
     params = {"since": f"{window.start}m"}
     if window.end > 0:
@@ -62,10 +62,10 @@ def window_params(window: Window) -> dict[str, str]:
 
 
 def split_window(window: Window) -> tuple[Window, Window] | None:
-    """Halbiere ein Fenster; ``None``, wenn es zu klein zum Teilen ist.
+    """Halve a window; ``None`` if it is too small to split.
 
-    Zurück kommt (älterer Teil, jüngerer Teil) — in dieser Reihenfolge werden
-    sie auch abgefragt, damit die Reihenfolge der Alerts grob erhalten bleibt.
+    Returns (older part, newer part) — they are queried in that order so that
+    the order of the alerts is roughly preserved.
     """
     if window.minutes < 2 * MIN_WINDOW_MINUTES:
         return None

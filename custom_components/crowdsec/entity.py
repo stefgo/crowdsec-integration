@@ -1,4 +1,4 @@
-"""Gemeinsame Basis aller CrowdSec-Entitäten."""
+"""Common base of all CrowdSec entities."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from .coordinator import CrowdSecConfigEntry, CrowdSecCoordinator, CrowdSecData
 
 
 class CrowdSecEntity(CoordinatorEntity[CrowdSecCoordinator]):
-    """Bindet eine Entität an das Gerät ihrer Instanz."""
+    """Binds an entity to the device of its instance."""
 
     _attr_has_entity_name = True
 
@@ -35,5 +35,5 @@ class CrowdSecEntity(CoordinatorEntity[CrowdSecCoordinator]):
 
     @property
     def data(self) -> CrowdSecData:
-        """Aktueller Datenstand des Coordinators."""
+        """Current data of the coordinator."""
         return self.coordinator.data

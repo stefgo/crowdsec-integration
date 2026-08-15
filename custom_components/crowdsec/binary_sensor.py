@@ -1,4 +1,4 @@
-"""Binäre Sensoren: Erreichbarkeit und Sammelstörung."""
+"""Binary sensors: reachability and the aggregate problem flag."""
 
 from __future__ import annotations
 
@@ -20,7 +20,7 @@ from .entity import CrowdSecEntity
 
 @dataclass(frozen=True, kw_only=True)
 class CrowdSecBinarySensorDescription(BinarySensorEntityDescription):
-    """Beschreibung mit Wert- und Attributfunktion."""
+    """Description with a value and an attribute function."""
 
     value_fn: Callable[[CrowdSecData], bool]
     attrs_fn: Callable[[CrowdSecData], dict[str, Any]] | None = None
@@ -49,7 +49,7 @@ async def async_setup_entry(
     entry: CrowdSecConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
-    """Lege die binären Sensoren einer Instanz an."""
+    """Create the binary sensors of an instance."""
     coordinator = entry.runtime_data
     async_add_entities(
         CrowdSecBinarySensor(coordinator, entry, description)
@@ -58,16 +58,16 @@ async def async_setup_entry(
 
 
 class CrowdSecBinarySensor(CrowdSecEntity, BinarySensorEntity):
-    """Erreichbarkeit bzw. Sammelstörung einer Instanz."""
+    """Reachability or aggregate problem flag of an instance."""
 
     entity_description: CrowdSecBinarySensorDescription
 
     @property
     def available(self) -> bool:
-        """Bewusst immer verfügbar.
+        """Deliberately always available.
 
-        Diese beiden Entitäten *melden* den Ausfall — sie dürfen bei einem
-        fehlgeschlagenen Scrape nicht selbst auf ``unavailable`` gehen.
+        These two entities are the ones that *report* the outage — they must
+        not go ``unavailable`` themselves when a scrape fails.
         """
         return self.coordinator.data is not None
 

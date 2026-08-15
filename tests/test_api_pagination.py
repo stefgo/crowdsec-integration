@@ -1,8 +1,8 @@
-"""Tests für das Aufteilen der Alert-Abfrage.
+"""Tests for splitting the alert query.
 
-Die HTTP-Ebene bleibt außen vor: Getestet wird, wie der Client auf ein
-abgeschnittenes Fenster reagiert — welche Fenster er nachfragt, wie er
-Überschneidungen entfernt und wann er aufgibt.
+The HTTP layer stays out of it: what is tested is how the client reacts to a
+truncated window — which windows it queries next, how it removes overlaps and
+when it gives up.
 """
 
 from __future__ import annotations
@@ -11,12 +11,12 @@ import asyncio
 
 import pytest
 
-# Der Client selbst hängt an aiohttp; ohne die Abhängigkeit gibt es hier
-# nichts zu prüfen.
+# The client itself depends on aiohttp; without that dependency there is
+# nothing to check here.
 pytest.importorskip("aiohttp")
 
-# api.py verweist relativ auf seine Nachbarmodule — deshalb über das in
-# conftest.py angemeldete Paket importieren, nicht flach.
+# api.py references its neighbouring modules relatively — import it through
+# the package registered in conftest.py, not flat.
 from crowdsec_component.api import CrowdSecClient  # noqa: E402
 from crowdsec_component.timewindow import Window  # noqa: E402
 
@@ -24,10 +24,10 @@ LIMIT = 3
 
 
 def build_client() -> CrowdSecClient:
-    """Ein Client ohne Session — die HTTP-Aufrufe werden ersetzt.
+    """A client without a session — the HTTP calls are replaced.
 
-    Muss innerhalb eines laufenden Event-Loops aufgerufen werden: Der
-    Konstruktor legt ein ``asyncio.Lock`` an.
+    Has to be called inside a running event loop: the constructor creates an
+    ``asyncio.Lock``.
     """
     return CrowdSecClient(
         session=None,
@@ -43,9 +43,9 @@ def alert(identifier: int) -> dict:
 
 
 def query(answer, limit=LIMIT, since="24h"):
-    """Frage Alerts ab und liefere (Ergebnis, abgefragte Fenster).
+    """Query alerts and return (result, queried windows).
 
-    ``answer`` ist eine Funktion Fenster -> Alert-Liste.
+    ``answer`` is a function window -> list of alerts.
     """
     asked: list[Window] = []
 
@@ -64,9 +64,9 @@ def query(answer, limit=LIMIT, since="24h"):
 
 
 def run_with_windows(responses, limit=LIMIT):
-    """Wie ``query``, aber mit einer Tabelle Fenster -> Antwort.
+    """Like ``query``, but with a table window -> response.
 
-    Nicht aufgeführte Fenster antworten leer.
+    Windows that are not listed answer empty.
     """
     return query(lambda window: responses.get(window, []), limit)
 
@@ -88,7 +88,7 @@ def test_full_window_gets_split():
 
     assert asked[0] == Window(1440, 0)
     assert set(asked[1:]) == {Window(1440, 720), Window(720, 0)}
-    # Das abgeschnittene Ergebnis wird verworfen, die Hälften ersetzen es.
+    # The truncated result is discarded, the halves replace it.
     assert sorted(a["id"] for a in result.alerts) == [10, 11, 20]
     assert result.truncated is False
 
@@ -98,7 +98,7 @@ def test_duplicates_across_windows_are_removed():
     responses = {
         Window(1440, 0): [alert(i) for i in range(LIMIT)],
         Window(1440, 720): [shared, alert(11)],
-        # Derselbe Alert taucht am Rand beider Fenster auf.
+        # The same alert shows up at the edge of both windows.
         Window(720, 0): [shared, alert(12)],
     }
     result, _ = run_with_windows(responses)
@@ -106,12 +106,12 @@ def test_duplicates_across_windows_are_removed():
 
 
 def test_gives_up_and_reports_truncation():
-    # Jedes Fenster bleibt am Limit: irgendwann ist Schluss mit Teilen.
+    # Every window stays at the limit: at some point splitting has to stop.
     always_full = [alert(i) for i in range(LIMIT)]
     result, asked = query(lambda window: always_full)
 
     assert result.truncated is True
-    # Die Teilungstiefe ist begrenzt, sonst würde ein Zyklus die LAPI fluten.
+    # The split depth is bounded, otherwise one cycle would flood the LAPI.
     assert len(asked) < 64
     assert result.alerts
 
@@ -119,7 +119,7 @@ def test_gives_up_and_reports_truncation():
 def test_invalid_window_is_rejected():
     async def run():
         client = build_client()
-        await client.async_get_alerts(since="gestern")
+        await client.async_get_alerts(since="yesterday")
 
     with pytest.raises(ValueError):
         asyncio.run(run())

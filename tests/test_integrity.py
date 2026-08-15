@@ -1,7 +1,7 @@
-"""Tests, die Manifest, Konstanten und Übersetzungen zusammenhalten.
+"""Tests that keep manifest, constants and translations in sync.
 
-Diese Dateien werden von Hand gepflegt und laufen sonst unbemerkt
-auseinander — ein fehlender Schlüssel fällt erst in der Oberfläche auf.
+These files are maintained by hand and otherwise drift apart unnoticed — a
+missing key is only spotted in the UI.
 """
 
 from __future__ import annotations
@@ -24,7 +24,7 @@ TRANSLATIONS = sorted((COMPONENT / "translations").glob("*.json"))
 
 
 def _keys(node, prefix=""):
-    """Alle Blattpfade eines verschachtelten Dicts."""
+    """All leaf paths of a nested dict."""
     if not isinstance(node, dict):
         return {prefix}
     result = set()
@@ -39,8 +39,8 @@ def test_version_comes_from_the_manifest():
 
 
 def test_user_agent_is_parseable_by_crowdsec():
-    # CrowdSec legt den User-Agent als Version der Machine ab und erwartet
-    # genau ein "name/version" — sonst scheitert der Login mit 401.
+    # CrowdSec stores the user agent as the version of the machine and expects
+    # exactly one "name/version" — otherwise the login fails with a 401.
     name, _, version = const.USER_AGENT.partition("/")
     assert name and version
     assert "/" not in version
@@ -52,24 +52,24 @@ def test_domain_matches_manifest():
 
 
 def test_translations_exist():
-    assert TRANSLATIONS, "keine Übersetzungsdateien gefunden"
+    assert TRANSLATIONS, "no translation files found"
 
 
 def test_translations_cover_all_strings():
     expected = _keys(STRINGS)
     for path in TRANSLATIONS:
         actual = _keys(json.loads(path.read_text(encoding="utf-8")))
-        assert not expected - actual, f"{path.name} fehlen: {sorted(expected - actual)}"
-        assert not actual - expected, f"{path.name} hat zu viel: {sorted(actual - expected)}"
+        assert not expected - actual, f"{path.name} is missing: {sorted(expected - actual)}"
+        assert not actual - expected, f"{path.name} has extra: {sorted(actual - expected)}"
 
 
-# Derselbe Ausdruck, mit dem hassfest Übersetzungen prüft. Er schlägt schon
-# bei einem Platzhalter wie "<host>" an — nicht nur bei echtem HTML.
+# The same expression hassfest uses to check translations. It already triggers
+# on a placeholder like "<host>" — not only on real HTML.
 HTML_PATTERN = re.compile(r"<[a-z][\s\S]*>")
 
 
 def _values(node, prefix=""):
-    """Alle Blattwerte mit ihrem Pfad."""
+    """All leaf values together with their path."""
     if isinstance(node, dict):
         for key, value in node.items():
             yield from _values(value, f"{prefix}.{key}" if prefix else key)
@@ -85,7 +85,7 @@ def test_no_html_in_translations():
 
 
 def test_placeholders_are_balanced():
-    """Geschweifte Klammern sind Platzhalter — eine einzelne bricht die Anzeige."""
+    """Curly braces are placeholders — a lone one breaks the display."""
     for path in [COMPONENT / "strings.json", *TRANSLATIONS]:
         content = json.loads(path.read_text(encoding="utf-8"))
         for where, text in _values(content):
@@ -93,7 +93,7 @@ def test_placeholders_are_balanced():
 
 
 def test_services_are_documented():
-    """Jeder in services.yaml angebotene Dienst braucht einen Text."""
+    """Every service offered in services.yaml needs a text."""
     raw = (COMPONENT / "services.yaml").read_text(encoding="utf-8")
     declared = {
         line.split(":")[0]

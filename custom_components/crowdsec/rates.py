@@ -1,36 +1,35 @@
-"""Ratenbildung aus monoton steigenden Countern.
+"""Rate calculation from monotonically increasing counters.
 
-CrowdSec liefert ``*_total``-Metriken als Counter. Für „pro Minute"-Werte muss
-die Integration zwei aufeinanderfolgende Messungen vergleichen. Startet der
-Dienst neu, springen alle Counter auf null zurück — das darf nicht als
-negativer Durchsatz durchschlagen, deshalb wird ein Neustart erkannt und das
-betroffene Intervall verworfen.
+CrowdSec exposes ``*_total`` metrics as counters. For "per minute" values the
+integration has to compare two consecutive measurements. When the service
+restarts, all counters jump back to zero — that must not show up as negative
+throughput, so a restart is detected and the affected interval is discarded.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 
-# Toleranz beim Vergleich von ``process_start_time_seconds`` in Sekunden.
+# Tolerance when comparing ``process_start_time_seconds``, in seconds.
 START_TIME_TOLERANCE = 1.0
 
 
 @dataclass(frozen=True, slots=True)
 class RateWindow:
-    """Ergebnis eines gültigen Vergleichs zweier Messungen."""
+    """Result of a valid comparison of two measurements."""
 
     deltas: dict[str, float]
     elapsed: float
 
     def per_minute(self, key: str) -> float | None:
-        """Zuwachs eines Counters pro Minute."""
+        """Increase of a counter per minute."""
         if key not in self.deltas or self.elapsed <= 0:
             return None
         return self.deltas[key] / self.elapsed * 60.0
 
 
 class RateTracker:
-    """Hält die letzte Messung und liefert Deltas zur aktuellen."""
+    """Keeps the last measurement and returns deltas to the current one."""
 
     def __init__(self) -> None:
         self._counters: dict[str, float] | None = None
@@ -38,7 +37,7 @@ class RateTracker:
         self._timestamp: float | None = None
 
     def reset(self) -> None:
-        """Verwirf den Verlauf, etwa nach einem fehlgeschlagenen Scrape."""
+        """Discard the history, e.g. after a failed scrape."""
         self._counters = None
         self._start_time = None
         self._timestamp = None
@@ -49,10 +48,10 @@ class RateTracker:
         start_time: float | None,
         timestamp: float,
     ) -> RateWindow | None:
-        """Nimm eine Messung auf und liefere das Fenster zur vorigen.
+        """Record a measurement and return the window to the previous one.
 
-        ``None`` bedeutet: kein belastbarer Vergleich möglich — erste Messung,
-        Neustart des Dienstes oder ein zurückgesprungener Counter.
+        ``None`` means: no reliable comparison possible — first measurement,
+        restart of the service, or a counter that jumped backwards.
         """
         previous = self._counters
         previous_start = self._start_time
@@ -83,8 +82,8 @@ class RateTracker:
             if before is None:
                 continue
             if value < before:
-                # Counter-Rücksprung ohne erkennbaren Neustart: Intervall
-                # komplett verwerfen statt einzelne Werte zu raten.
+                # Counter jumped backwards without a detectable restart:
+                # discard the whole interval instead of guessing single values.
                 return None
             deltas[key] = value - before
 
@@ -95,12 +94,12 @@ class RateTracker:
 
 
 def error_ratio(ok: float | None, ko: float | None) -> float | None:
-    """Fehleranteil in Prozent aus einem ok/ko-Paar.
+    """Error share in percent from an ok/ko pair.
 
-    Fehlt einer der beiden Werte, zählt er als 0: CrowdSec exportiert
-    ``cs_parser_hits_ko_total`` erst nach dem ersten Parse-Fehler, ein
-    fehlerfreier Parser soll aber 0 % zeigen statt „unbekannt".
-    ``None`` bleibt dem Fall „gar keine Daten" vorbehalten.
+    If one of the two values is missing, it counts as 0: CrowdSec only exports
+    ``cs_parser_hits_ko_total`` after the first parse error, but an error-free
+    parser should show 0 % instead of "unknown". ``None`` is reserved for the
+    case "no data at all".
     """
     if ok is None and ko is None:
         return None

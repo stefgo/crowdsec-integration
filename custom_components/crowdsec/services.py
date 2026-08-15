@@ -1,8 +1,8 @@
-"""Dienste zum Setzen und Löschen von Decisions.
+"""Services for creating and removing decisions.
 
-Die Dienste hängen an einem Config-Entry, nicht an einer Entität: Sie wirken
-auf die Instanz als Ganzes, und bei mehreren eingerichteten Instanzen muss
-klar sein, welche gemeint ist.
+The services are attached to a config entry, not to an entity: they act on the
+instance as a whole, and with several instances set up it has to be clear
+which one is meant.
 """
 
 from __future__ import annotations
@@ -36,7 +36,7 @@ _LOGGER = logging.getLogger(__name__)
 
 ENTRY_SELECTOR = ConfigEntrySelector({"integration": DOMAIN})
 
-# Eine Dauer wie "4h", "30m" oder "1d" — genau das Format von cscli.
+# A duration such as "4h", "30m" or "1d" — exactly the format of cscli.
 DURATION_PATTERN = r"^\d+(\.\d+)?[smhd]$"
 
 BASE_SCHEMA = {
@@ -60,7 +60,7 @@ REFRESH_SCHEMA = vol.Schema(BASE_SCHEMA)
 
 
 def _coordinator(hass: HomeAssistant, call: ServiceCall):
-    """Hole den Coordinator zum angegebenen Config-Entry."""
+    """Fetch the coordinator for the given config entry."""
     entry_id = call.data[ATTR_CONFIG_ENTRY_ID]
     entry = hass.config_entries.async_get_entry(entry_id)
     if entry is None or entry.domain != DOMAIN:
@@ -79,11 +79,11 @@ def _coordinator(hass: HomeAssistant, call: ServiceCall):
 
 
 def _validated_ip(call: ServiceCall) -> str:
-    """Prüfe die Zieladresse, bevor sie an die LAPI geht."""
+    """Validate the target address before it goes to the LAPI."""
     raw = str(call.data[ATTR_IP]).strip()
     try:
-        # Einzeladressen und CIDR-Bereiche sind beide erlaubt — CrowdSec kennt
-        # den Scope "Ip" für beides.
+        # Single addresses and CIDR ranges are both allowed — CrowdSec uses
+        # the scope "Ip" for both.
         cv.matches_regex(r"^[0-9a-fA-F:.]+(/\d{1,3})?$")(raw)
     except vol.Invalid as err:
         raise ServiceValidationError(
@@ -95,7 +95,7 @@ def _validated_ip(call: ServiceCall) -> str:
 
 
 def _wrap_api_error(err: Exception) -> ServiceValidationError:
-    """Übersetze einen Fehler der LAPI in eine Meldung für die Oberfläche."""
+    """Translate an error from the LAPI into a message for the UI."""
     return ServiceValidationError(
         translation_domain=DOMAIN,
         translation_key="service_failed",
@@ -105,7 +105,7 @@ def _wrap_api_error(err: Exception) -> ServiceValidationError:
 
 @callback
 def async_setup_services(hass: HomeAssistant) -> None:
-    """Registriere die Dienste einmalig für die gesamte Integration."""
+    """Register the services once for the whole integration."""
     if hass.services.has_service(DOMAIN, SERVICE_BAN_IP):
         return
 
@@ -118,7 +118,7 @@ def async_setup_services(hass: HomeAssistant) -> None:
             )
         except (CrowdSecAuthError, CrowdSecConnectionError) as err:
             raise _wrap_api_error(err) from err
-        _LOGGER.info("Ban für %s gesetzt (%s)", ip, call.data[ATTR_DURATION])
+        _LOGGER.info("Banned %s (%s)", ip, call.data[ATTR_DURATION])
         await coordinator.async_request_refresh()
 
     async def async_unban(call: ServiceCall) -> None:
@@ -128,7 +128,7 @@ def async_setup_services(hass: HomeAssistant) -> None:
             deleted = await coordinator.client.async_unban_ip(ip)
         except (CrowdSecAuthError, CrowdSecConnectionError) as err:
             raise _wrap_api_error(err) from err
-        _LOGGER.info("%d Decision(s) für %s gelöscht", deleted, ip)
+        _LOGGER.info("Deleted %d decision(s) for %s", deleted, ip)
         await coordinator.async_request_refresh()
 
     async def async_refresh(call: ServiceCall) -> None:
@@ -146,6 +146,6 @@ def async_setup_services(hass: HomeAssistant) -> None:
 
 @callback
 def async_unload_services(hass: HomeAssistant) -> None:
-    """Entferne die Dienste, wenn die letzte Instanz verschwindet."""
+    """Remove the services when the last instance goes away."""
     for name in (SERVICE_BAN_IP, SERVICE_UNBAN_IP, SERVICE_REFRESH):
         hass.services.async_remove(DOMAIN, name)

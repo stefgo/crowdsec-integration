@@ -1,4 +1,4 @@
-"""Tests für den Prometheus-Parser."""
+"""Tests for the Prometheus parser."""
 
 from __future__ import annotations
 
@@ -57,21 +57,21 @@ def test_predicate_filters_routes():
 
 
 def test_quoted_comma_in_label_value():
-    parsed = parse_prometheus('cs_x{a="ein, wert",b="zwei"} 3')
-    assert parsed["cs_x"][0].labels == {"a": "ein, wert", "b": "zwei"}
+    parsed = parse_prometheus('cs_x{a="one, value",b="two"} 3')
+    assert parsed["cs_x"][0].labels == {"a": "one, value", "b": "two"}
     assert parsed["cs_x"][0].value == 3.0
 
 
 def test_escaped_quote_in_label_value():
-    parsed = parse_prometheus('cs_x{a="er sagte \\"hi\\"",b="2"} 1')
-    assert parsed["cs_x"][0].labels["a"] == 'er sagte "hi"'
+    parsed = parse_prometheus('cs_x{a="he said \\"hi\\"",b="2"} 1')
+    assert parsed["cs_x"][0].labels["a"] == 'he said "hi"'
     assert parsed["cs_x"][0].labels["b"] == "2"
 
 
 def test_comments_and_garbage_are_ignored():
-    parsed = parse_prometheus("# HELP x\n\nkaputt\ncs_ok 1\n")
+    parsed = parse_prometheus("# HELP x\n\nbroken\ncs_ok 1\n")
     assert "cs_ok" in parsed
-    assert "kaputt" not in parsed
+    assert "broken" not in parsed
 
 
 def test_first_total_falls_back():

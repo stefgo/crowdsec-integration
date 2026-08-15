@@ -1,80 +1,80 @@
-# CrowdSec für Home Assistant
+# CrowdSec for Home Assistant
 
-Custom-Integration, die eine oder mehrere CrowdSec-Instanzen in Home Assistant
-abbildet — Erreichbarkeit, Angriffsvolumen, Durchsatz und Durchsetzung.
+Custom integration that maps one or more CrowdSec instances into Home
+Assistant — reachability, attack volume, throughput and enforcement.
 
-Jede Instanz wird als eigenes Gerät angelegt; die Integration lässt sich beliebig
-oft hinzufügen.
+Every instance is created as its own device; the integration can be added as
+often as you like.
 
-## Entitäten je Instanz
+## Entities per instance
 
-| Entität | Typ | Quelle |
+| Entity | Type | Source |
 | --- | --- | --- |
-| Erreichbar | `binary_sensor` (connectivity) | Erfolg des Scrapes |
-| Störung | `binary_sensor` (problem) | Sammelflag, s. u. |
-| Scrape-Dauer | Sensor, s (diagnostisch) | gemessene Dauer beider Abfragen |
-| Letzter Neustart | Sensor, Timestamp | `process_start_time_seconds` |
-| Letzte Aktualisierung | Sensor, Timestamp | letzter **erfolgreicher** Scrape |
-| Letzter Alert | Sensor, Timestamp | jüngster Alert der letzten 24 h |
-| Aktive Decisions | Sensor | `/v1/decisions` bzw. `cs_active_decisions` |
-| Neue Bans 24h | Sensor | `/v1/alerts?since=24h` |
-| Eindeutige Angreifer 24h | Sensor | verschiedene Quell-IPs derselben Alerts |
-| Top-Szenario 24h | Sensor, Text | häufigstes Szenario derselben Alerts |
-| Top-Land 24h | Sensor, Text | `source.cn` derselben Alerts |
-| Top-Angreifer 24h | Sensor, Text | häufigste Quell-IP derselben Alerts |
-| Aktive Buckets | Sensor | `cs_buckets` |
-| Verarbeitete Zeilen | Sensor (diagnostisch) | `cs_parser_hits_total`, kumulativ |
-| Zeilen/min | Sensor | Rate aus `cs_parser_hits_total` |
-| Parse-Fehlerquote | Sensor, % | `cs_parser_hits_ko_total` / (ok + ko) |
-| Bouncer-Abfragen/min | Sensor | Rate aus `cs_lapi_route_requests_total` |
+| Reachable | `binary_sensor` (connectivity) | success of the scrape |
+| Status | `binary_sensor` (problem) | aggregate flag, see below |
+| Scrape duration | sensor, s (diagnostic) | measured duration of both queries |
+| Last restart | sensor, timestamp | `process_start_time_seconds` |
+| Last update | sensor, timestamp | last **successful** scrape |
+| Last alert | sensor, timestamp | most recent alert of the last 24 h |
+| Active decisions | sensor | `/v1/decisions` or `cs_active_decisions` |
+| New bans 24h | sensor | `/v1/alerts?since=24h` |
+| Unique attackers 24h | sensor | distinct source IPs of the same alerts |
+| Top scenario 24h | sensor, text | most frequent scenario of the same alerts |
+| Top country 24h | sensor, text | `source.cn` of the same alerts |
+| Top attacker 24h | sensor, text | most frequent source IP of the same alerts |
+| Active buckets | sensor | `cs_buckets` |
+| Lines processed | sensor (diagnostic) | `cs_parser_hits_total`, cumulative |
+| Lines per minute | sensor | rate from `cs_parser_hits_total` |
+| Parse error rate | sensor, % | `cs_parser_hits_ko_total` / (ok + ko) |
+| Bouncer queries per minute | sensor | rate from `cs_lapi_route_requests_total` |
 
-Nützliche Attribute: `Aktive Decisions` führt `by_reason`/`by_action`,
-`Top-Szenario 24h` die Top 5 als `top_scenarios`, `Top-Land 24h` die
-`top_countries`, `Eindeutige Angreifer 24h` die `top_attackers` mitsamt
-Alert-Zahl, `Aktive Buckets` die offenen Buckets je Szenario, `Störung` die
-auslösenden `reasons`.
+Useful attributes: `Active decisions` carries `by_reason`/`by_action`,
+`Top scenario 24h` the top 5 as `top_scenarios`, `Top country 24h` the
+`top_countries`, `Unique attackers 24h` the `top_attackers` together with their
+alert count, `Active buckets` the open buckets per scenario, and `Status` the
+triggering `reasons`.
 
-`Verarbeitete Zeilen` ist bewusst `total_increasing`: Der Zähler läuft seit dem
-Start des Dienstes und wird beim Neustart zurückgesetzt — Home Assistant fängt
-das ab und liefert brauchbare Tages- und Wochensummen, die die Momentanrate
-`Zeilen/min` nicht hergibt.
+`Lines processed` is deliberately `total_increasing`: the counter runs since
+the start of the service and is reset on a restart — Home Assistant absorbs
+that and yields usable daily and weekly sums, which the instantaneous
+`Lines per minute` cannot provide.
 
-## Dienste
+## Services
 
-| Dienst | Wirkung |
+| Service | Effect |
 | --- | --- |
-| `crowdsec.ban_ip` | legt eine Ban-Decision an (`ip`, `duration`, `reason`) |
-| `crowdsec.unban_ip` | löscht alle Decisions zu einer `ip` |
-| `crowdsec.refresh` | fragt sofort ab, statt auf das Intervall zu warten |
+| `crowdsec.ban_ip` | creates a ban decision (`ip`, `duration`, `reason`) |
+| `crowdsec.unban_ip` | deletes all decisions for an `ip` |
+| `crowdsec.refresh` | polls immediately instead of waiting for the interval |
 
-Alle drei erwarten die Instanz als `config_entry_id`. `ip` nimmt eine einzelne
-Adresse oder einen CIDR-Bereich, `duration` das cscli-Format (`30m`, `4h`,
-`1d`). Nach Ban und Unban aktualisiert die Integration die Werte selbst.
+All three expect the instance as `config_entry_id`. `ip` takes a single address
+or a CIDR range, `duration` the cscli format (`30m`, `4h`, `1d`). After a ban
+and an unban the integration refreshes the values by itself.
 
 ```yaml
 action:
   - service: crowdsec.ban_ip
     data:
-      config_entry_id: "{{ config_entry_id('binary_sensor.crowdsec_edge_erreichbar') }}"
+      config_entry_id: "{{ config_entry_id('binary_sensor.crowdsec_edge_reachable') }}"
       ip: 192.0.2.10
       duration: 24h
-      reason: Fehlversuche am Reverse-Proxy
+      reason: Failed attempts on the reverse proxy
 ```
 
-## Event bei neuem Ban
+## Event on a new ban
 
-Für jeden neu erkannten Ban feuert die Integration `crowdsec_new_ban` mit
+For every newly detected ban the integration fires `crowdsec_new_ban` with
 `ip`, `scenario`, `country`, `as_name`, `duration`, `scope`, `value`,
-`created_at`, `alert_id` sowie `entry_id`/`instance`.
+`created_at`, `alert_id` as well as `entry_id`/`instance`.
 
-Beim ersten Zyklus nach einem Start bleibt es still — sonst würden die Bans der
-letzten 24 Stunden auf einen Schlag ausgeschüttet. Fallen in einem Intervall
-mehr als 25 Bans an, meldet die Integration nur die jüngsten 25 und schreibt
-den Rest ins Protokoll.
+The first cycle after a start stays silent — otherwise the bans of the last 24
+hours would be dumped all at once. If more than 25 bans occur in one interval,
+the integration only reports the 25 most recent ones and writes the rest to the
+log.
 
 ```yaml
 automation:
-  - alias: CrowdSec hat jemanden gebannt
+  - alias: CrowdSec banned someone
     trigger:
       - platform: event
         event_type: crowdsec_new_ban
@@ -83,165 +83,166 @@ automation:
         data:
           message: >-
             {{ trigger.event.data.ip }} ({{ trigger.event.data.country }})
-            gebannt für {{ trigger.event.data.duration }}
-            wegen {{ trigger.event.data.scenario }}
+            banned for {{ trigger.event.data.duration }}
+            because of {{ trigger.event.data.scenario }}
 ```
 
-## Push und Badge auf iOS/iPadOS
+## Push and badge on iOS/iPadOS
 
-Ein fertiges Package für die Home-Assistant-Companion-App liegt unter
-[`examples/ios_push_badge.yaml`](examples/ios_push_badge.yaml). Es schickt eine
-Push-Benachrichtigung bei neuen Bans und hält die Zahl im App-Icon aktuell.
+A ready-made package for the Home Assistant companion app is available at
+[`examples/ios_push_badge.yaml`](examples/ios_push_badge.yaml). It sends a push
+notification on new bans and keeps the number on the app icon up to date.
 
-Direkt auf `crowdsec_new_ban` zu pushen ist bei einem Angriffsschwall keine gute
-Idee — 25 Ereignisse pro Zyklus wären 25 Meldungen. Das Package geht deshalb
-über einen Zwischenschritt:
+Pushing directly on `crowdsec_new_ban` is not a good idea during a burst of
+attacks — 25 events per cycle would mean 25 notifications. The package
+therefore takes a detour:
 
-1. Ein trigger-basierter Template-Sensor `sensor.crowdsec_ban_puffer` sammelt
-   die Bans: Zustand ist die Anzahl, in den Attributen stehen die betroffenen
-   IPs, Szenarien und Länder. Kein Ereignis löst hier eine Meldung aus.
-2. Eine Automatisierung schickt daraus **eine** zusammengefasste Meldung, sobald
-   45 Sekunden lang Ruhe war, sofort ab 20 gepufferten Bans, und spätestens alle
-   fünf Minuten, falls der Beschuss nicht abreißt. Danach leert ein
-   `crowdsec_push_flush`-Ereignis den Puffer.
-3. Alle Meldungen teilen sich `tag: crowdsec-digest` — iOS ersetzt damit die
-   vorherige Meldung, statt einen Stapel auf dem Sperrbildschirm anzulegen.
-   Bei einer erkannten Welle steigt die Meldung zusätzlich auf
-   `interruption-level: time-sensitive` und kommt so auch im Fokus-Modus durch.
+1. A trigger-based template sensor `sensor.crowdsec_ban_buffer` collects the
+   bans: the state is the count, the attributes hold the affected IPs,
+   scenarios and countries. No event triggers a notification here.
+2. An automation sends **one** summarised notification from it as soon as
+   there have been 45 seconds of quiet, immediately from 20 buffered bans on,
+   and at the latest every five minutes if the barrage does not stop. A
+   `crowdsec_push_flush` event then empties the buffer.
+3. All notifications share `tag: crowdsec-digest` — iOS uses it to replace the
+   previous notification instead of building a stack on the lock screen. On a
+   detected wave the notification additionally rises to
+   `interruption-level: time-sensitive` and thus gets through in focus mode.
 
-Die Badge hängt nicht am Puffer, sondern an `sensor.crowdsec_active_decisions`:
-Auf iOS ist die Badge ein absoluter Wert, kein Zähler — an die aktiven
-Entscheidungen gekoppelt zählt sie auch wieder herunter, wenn Bans ablaufen.
-Eine zweite Automatisierung setzt sie per stiller Push (`message: delete_alert`),
-gedrosselt auf höchstens eine Aktualisierung pro 30 Sekunden.
+The badge does not hang off the buffer but off
+`sensor.crowdsec_active_decisions`: on iOS the badge is an absolute value, not
+a counter — tied to the active decisions it also counts down again when bans
+expire. A second automation sets it via a silent push
+(`message: delete_alert`), throttled to at most one update per 30 seconds.
 
-Vor dem Einsatz anzupassen: der Dienstname der Companion-App in der
-Notify-Gruppe (`mobile_app_iphone`) und die Entity-IDs, falls die Instanz nicht
-`crowdsec` heißt.
+To adjust before use: the service name of the companion app in the notify group
+(`mobile_app_iphone`) and the entity IDs, if the instance is not called
+`crowdsec`.
 
-## Voraussetzungen auf der CrowdSec-Seite
+## Requirements on the CrowdSec side
 
-1. **Prometheus-Endpunkt aktivieren** in `/etc/crowdsec/config.yaml`:
+1. **Enable the Prometheus endpoint** in `/etc/crowdsec/config.yaml`:
 
    ```yaml
    prometheus:
      enabled: true
-     level: full          # "full" wird für Zeilen/min und Parse-Fehler gebraucht
-     listen_addr: 0.0.0.0 # bzw. die Adresse, die Home Assistant erreicht
+     level: full          # "full" is needed for lines/min and parse errors
+     listen_addr: 0.0.0.0 # or the address Home Assistant can reach
      listen_port: 6060
    ```
 
-   Mit `level: aggregated` fehlen die Parser-Metriken; `Zeilen/min` und
-   `Parse-Fehlerquote` bleiben dann leer.
+   With `level: aggregated` the parser metrics are missing; `Lines per minute`
+   and `Parse error rate` then stay empty.
 
-2. **Machine-Zugangsdaten** für die LAPI anlegen:
+2. **Create machine credentials** for the LAPI:
 
    ```bash
-   sudo cscli machines add homeassistant --password '<passwort>'
+   sudo cscli machines add homeassistant --password '<password>'
    ```
 
-   Diese werden für `/v1/alerts` (Neue Bans 24h, Top-Szenario) benötigt.
+   They are needed for `/v1/alerts` (New bans 24h, Top scenario).
 
-3. **Optional: Bouncer-API-Key** für eine exakte Decision-Zahl:
+3. **Optional: a bouncer API key** for an exact decision count:
 
    ```bash
    sudo cscli bouncers add homeassistant
    ```
 
-   Ohne Key wird die Metrik `cs_active_decisions` verwendet — die zählt
-   Decisions inklusive der aus der CAPI bezogenen Listen und weicht daher
-   leicht ab.
+   Without a key the `cs_active_decisions` metric is used — it counts decisions
+   including the lists pulled from the CAPI and therefore deviates slightly.
 
 ## Installation
 
-**HACS:** Repository als benutzerdefiniertes Repository vom Typ *Integration*
-hinzufügen, installieren, Home Assistant neu starten.
+**HACS:** add the repository as a custom repository of type *Integration*,
+install it, restart Home Assistant.
 
-**Manuell:** `custom_components/crowdsec/` nach `<config>/custom_components/`
-kopieren und Home Assistant neu starten.
+**Manually:** copy `custom_components/crowdsec/` to
+`<config>/custom_components/` and restart Home Assistant.
 
-Danach *Einstellungen → Geräte & Dienste → Integration hinzufügen → CrowdSec*.
+Then go to *Settings → Devices & services → Add integration → CrowdSec*.
 
-## Konfiguration
+## Configuration
 
-| Feld | Beispiel |
+| Field | Example |
 | --- | --- |
 | Name | `CrowdSec Edge` |
-| Metrics-URL | `http://10.0.0.5:6060/metrics` |
-| LAPI-URL | `http://10.0.0.5:8080` |
-| Machine-ID / Passwort | aus `cscli machines add` |
-| Bouncer-API-Key | optional, aus `cscli bouncers add` |
-| SSL prüfen | bei selbstsignierten Zertifikaten abschalten |
+| Metrics URL | `http://10.0.0.5:6060/metrics` |
+| LAPI URL | `http://10.0.0.5:8080` |
+| Machine ID / password | from `cscli machines add` |
+| Bouncer API key | optional, from `cscli bouncers add` |
+| Verify SSL | turn off for self-signed certificates |
 
-Unter *Konfigurieren* lassen sich Abfrageintervall (Standard 60 s), Zeitlimit
-je Anfrage (15 s), Schwellwert der Parse-Fehlerquote (5 %), die Zahl der
-Intervalle ohne Bouncer-Abfragen bis zur Störung (5) sowie die Alert-Zahl je
-Abfrage (1000) anpassen. Das Zeitlimit gilt pro Anfrage und muss kleiner als
-das Abfrageintervall sein — bei einer Instanz hinter VPN oder langsamem Proxy
-hilft ein höherer Wert. Die drei Abfragen eines Zyklus laufen parallel, das
-Zeitlimit summiert sich also nicht auf.
+Under *Configure* you can adjust the polling interval (default 60 s), the
+timeout per request (15 s), the threshold for the parse error rate (5 %), the
+number of intervals without bouncer queries before a problem is raised (5) and
+the number of alerts per query (1000). The timeout applies per request and has
+to be lower than the polling interval — for an instance behind a VPN or a slow
+proxy a higher value helps. The three queries of a cycle run in parallel, so
+the timeouts do not add up.
 
-### Vollständigkeit der 24h-Zahlen
+### Completeness of the 24h numbers
 
-Die LAPI kennt keine Pagination: Sie schneidet bei der angeforderten Zahl ab.
-Passiert das, halbiert die Integration das Zeitfenster und fragt die Hälften
-einzeln nach — bis zu vier Ebenen tief. Die 24h-Zahlen bleiben damit auch bei
-zehntausenden Alerts vollständig, ohne dass jede Abfrage riesig sein muss.
+The LAPI has no pagination: it truncates at the requested number. When that
+happens, the integration halves the time window and queries the halves
+separately — up to four levels deep. The 24h numbers therefore stay complete
+even with tens of thousands of alerts, without every query having to be huge.
 
-Reicht selbst das nicht — mehr Alerts in einer einzigen Minute, als eine
-Abfrage liefert —, erscheint ein Reparaturhinweis unter *Einstellungen →
-System → Reparaturen*, und `Neue Bans 24h` trägt `truncated: true`. Dann hilft
-nur eine höhere Alert-Zahl je Abfrage.
+If even that is not enough — more alerts in a single minute than one query
+returns — a repair issue appears under *Settings → System → Repairs*, and
+`New bans 24h` carries `truncated: true`. Only a higher number of alerts per
+query helps then.
 
-## Wann „Störung" auslöst
+## When "Status" turns on
 
-* Instanz nicht erreichbar
-* Parse-Fehlerquote über dem Schwellwert — das Logformat passt nicht mehr zum Parser
-* keine Logzeilen mehr verarbeitet, obwohl vorher welche kamen — CrowdSec ist blind
-* keine Bouncer-Abfragen über N Intervalle — Decisions werden nicht durchgesetzt
+* the instance is unreachable
+* the parse error rate is above the threshold — the log format no longer
+  matches the parser
+* no log lines are processed any more although there were some before —
+  CrowdSec is blind
+* no bouncer queries for N intervals — decisions are not being enforced
 
-Der Grund steht im Attribut `reasons`:
+The reason is in the `reasons` attribute:
 
 ```yaml
 automation:
-  - alias: CrowdSec meldet Störung
+  - alias: CrowdSec reports a problem
     trigger:
       - platform: state
-        entity_id: binary_sensor.crowdsec_edge_storung
+        entity_id: binary_sensor.crowdsec_edge_status
         to: "on"
         for: "00:05:00"
     action:
       - service: notify.persistent_notification
         data:
           message: >-
-            CrowdSec: {{ state_attr('binary_sensor.crowdsec_edge_storung', 'reasons') | join(', ') }}
+            CrowdSec: {{ state_attr('binary_sensor.crowdsec_edge_status', 'reasons') | join(', ') }}
 ```
 
-## Fehlersuche bei der Einrichtung
+## Troubleshooting the setup
 
-Der Config-Flow benennt den abgelehnten Zugang einzeln — Metrics-Endpunkt,
-LAPI-Login und Bouncer-Key werden getrennt gemeldet. Zum Nachstellen auf der
-Kommandozeile:
+The config flow names the rejected access path individually — metrics endpoint,
+LAPI login and bouncer key are reported separately. To reproduce it on the
+command line:
 
 ```bash
 curl -si http://<host>:6060/metrics | head -1
 curl -si -X POST http://<host>:8080/v1/watchers/login \
   -H 'Content-Type: application/json' \
-  -d '{"machine_id":"<id>","password":"<passwort>"}'
+  -d '{"machine_id":"<id>","password":"<password>"}'
 ```
 
-Antwortet `/v1/decisions` mit **404**, ist das kein Fehler: Nicht jede
-CrowdSec-Version liefert dort ein leeres Array. Die Integration weicht in dem
-Fall automatisch auf `cs_active_decisions` aus.
+If `/v1/decisions` answers with a **404**, that is not an error: not every
+CrowdSec version returns an empty array there. In that case the integration
+automatically falls back to `cs_active_decisions`.
 
-Meldet die LAPI beim Login `incorrect Username or Password`, obwohl dieselben
-Zugangsdaten per curl funktionieren, lohnt ein Blick auf den User-Agent:
-CrowdSec liest ihn aus, legt ihn als Version der Machine ab (`cscli machines
-list`) und erwartet das Format `name/version`. Die Integration sendet deshalb
-einen eigenen (`hass-crowdsec/…`) statt des zusammengesetzten von Home
-Assistant. Nachstellen lässt sich das mit `curl -A`.
+If the LAPI reports `incorrect Username or Password` on login although the same
+credentials work via curl, it is worth looking at the user agent: CrowdSec
+reads it, stores it as the version of the machine (`cscli machines list`) and
+expects the format `name/version`. The integration therefore sends its own
+(`hass-crowdsec/…`) instead of the composite one from Home Assistant. You can
+reproduce that with `curl -A`.
 
-Detailliertes Protokoll:
+Detailed logging:
 
 ```yaml
 logger:
@@ -249,23 +250,22 @@ logger:
     custom_components.crowdsec: debug
 ```
 
-## Verhalten bei Ausfall
+## Behaviour during an outage
 
-Schlägt ein Scrape fehl, gehen die Messwerte auf `unavailable` — sie werden
-bewusst **nicht** mit veralteten Zahlen weitergeführt. `Erreichbar`, `Störung`,
-`Letzte Aktualisierung` und `Letzter Neustart` bleiben verfügbar und liefern den
-Kontext dazu.
+If a scrape fails, the measured values go `unavailable` — they are deliberately
+**not** carried on with stale numbers. `Reachable`, `Status`, `Last update` and
+`Last restart` stay available and provide the context.
 
-Nach einem Neustart der Instanz werden die Ratensensoren für ein Intervall
-ausgesetzt, statt einen negativen Sprung aus zurückgesetzten Countern zu melden.
-`Letzter Neustart` zeigt dann den neuen Zeitpunkt.
+After a restart of the instance the rate sensors are suspended for one interval
+instead of reporting a negative jump from reset counters. `Last restart` then
+shows the new point in time.
 
-## Diagnose
+## Diagnostics
 
-Über *Herunterladen der Diagnose* am Gerät gibt es die redigierte
-Konfiguration, den letzten Datenstand und die rohen `cs_*`-Metriken der
-Instanz. Zugangsdaten und Angreifer-IPs sind ersetzt, die Häufigkeiten bleiben
-erhalten — der Bericht lässt sich also an ein Issue hängen.
+*Download diagnostics* on the device gives you the redacted configuration, the
+latest data and the raw `cs_*` metrics of the instance. Credentials and
+attacker IPs are replaced while the counts are preserved — so the report can be
+attached to an issue.
 
 ## Tests
 
@@ -274,13 +274,13 @@ pip install -r requirements_test.txt
 python -m pytest
 ```
 
-Abgedeckt sind die Teile ohne Home-Assistant-Abhängigkeit und zugleich die
-fehleranfälligsten: Prometheus-Parser, Raten- und Neustart-Logik,
-Alert-Auswertung samt Ban-Erkennung, das Aufteilen der Zeitfenster sowie die
-Konsistenz von Manifest, `strings.json` und Übersetzungen. In CI laufen
-zusätzlich `hassfest` und die HACS-Validierung (siehe
+Covered are the parts without a Home Assistant dependency, which are at the
+same time the most error-prone ones: the Prometheus parser, the rate and
+restart logic, the alert evaluation including ban detection, the splitting of
+the time windows as well as the consistency of manifest, `strings.json` and the
+translations. CI additionally runs `hassfest` and the HACS validation (see
 [.github/workflows/validate.yml](.github/workflows/validate.yml)).
 
-## Lizenz
+## License
 
 [MIT](LICENSE).

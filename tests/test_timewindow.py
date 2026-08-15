@@ -1,4 +1,4 @@
-"""Tests für die Zeitfenster der Alert-Abfrage."""
+"""Tests for the time windows of the alert query."""
 
 from __future__ import annotations
 
@@ -31,8 +31,8 @@ def test_parse_duration_rejects_nonsense():
 
 
 def test_window_params_omit_until_for_the_newest_window():
-    # Ein "until" am jüngsten Fenster würde gerade eintreffende Alerts
-    # verschlucken.
+    # An "until" on the most recent window would swallow alerts that are
+    # arriving right now.
     assert window_params(Window(1440, 0)) == {"since": "1440m"}
 
 
@@ -44,7 +44,7 @@ def test_split_halves_a_window():
     older, newer = split_window(Window(1440, 0))
     assert older == Window(1440, 720)
     assert newer == Window(720, 0)
-    # Die Hälften decken das Ausgangsfenster lückenlos ab.
+    # The halves cover the original window without a gap.
     assert older.end == newer.start
     assert older.minutes + newer.minutes == 1440
 

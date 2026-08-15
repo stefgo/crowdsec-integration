@@ -1,4 +1,4 @@
-"""HTTP-Client für den Metrics-Endpunkt und die LAPI einer CrowdSec-Instanz."""
+"""HTTP client for the metrics endpoint and the LAPI of a CrowdSec instance."""
 
 from __future__ import annotations
 
@@ -27,13 +27,13 @@ from .timewindow import Window, parse_duration, split_window, window_params
 
 _LOGGER = logging.getLogger(__name__)
 
-# Das JWT der LAPI läuft nach einer Stunde ab; kurz vorher erneuern.
+# The JWT of the LAPI expires after an hour; renew it shortly before that.
 TOKEN_REFRESH_MARGIN = timedelta(minutes=2)
 TOKEN_FALLBACK_TTL = timedelta(minutes=50)
 
-# Die Zugänge einer Instanz. Nur ENDPOINT_LAPI — der Login selbst — bedeutet
-# falsche Zugangsdaten; die übrigen dürfen einzeln ausfallen, ohne die
-# Integration lahmzulegen.
+# The access paths of an instance. Only ENDPOINT_LAPI — the login itself —
+# means wrong credentials; the others may fail individually without bringing
+# the integration down.
 ENDPOINT_METRICS = "metrics"
 ENDPOINT_LAPI = "lapi"
 ENDPOINT_ALERTS = "alerts"
@@ -41,18 +41,18 @@ ENDPOINT_BOUNCER = "bouncer"
 
 
 class CrowdSecError(Exception):
-    """Basisfehler der Integration."""
+    """Base error of the integration."""
 
 
 class CrowdSecConnectionError(CrowdSecError):
-    """Instanz war nicht erreichbar oder hat unbrauchbar geantwortet."""
+    """Instance was unreachable or answered with something unusable."""
 
 
 class CrowdSecAuthError(CrowdSecError):
-    """Anmeldedaten wurden abgelehnt.
+    """Credentials were rejected.
 
-    ``endpoint`` benennt den Zugang, der abgelehnt hat — die drei sind
-    unabhängig voneinander und die Meldung soll sagen, welcher klemmt.
+    ``endpoint`` names the access path that rejected them — the three are
+    independent of each other and the message should say which one is stuck.
     """
 
     def __init__(self, message: str, endpoint: str = ENDPOINT_LAPI) -> None:
@@ -61,19 +61,19 @@ class CrowdSecAuthError(CrowdSecError):
 
 
 class AlertResult(NamedTuple):
-    """Ergebnis einer Alert-Abfrage samt Hinweis auf Vollständigkeit."""
+    """Result of an alert query, including a hint about completeness."""
 
     alerts: list[dict[str, Any]]
     truncated: bool
 
 
 def _fingerprint(secret: str) -> str:
-    """Gekürzter SHA-256 eines Geheimnisses für den Soll-Ist-Vergleich im Log."""
+    """Truncated SHA-256 of a secret, to compare expected and actual in the log."""
     return hashlib.sha256(secret.encode("utf-8")).hexdigest()[:8]
 
 
 def _parse_expiry(raw: Any) -> datetime | None:
-    """Parse das RFC3339-Ablaufdatum aus der Login-Antwort."""
+    """Parse the RFC3339 expiry date from the login response."""
     if not isinstance(raw, str):
         return None
     text = raw.strip().replace("Z", "+00:00")
@@ -87,7 +87,7 @@ def _parse_expiry(raw: Any) -> datetime | None:
 
 
 class CrowdSecClient:
-    """Kapselt beide Endpunkte einer Instanz."""
+    """Wraps both endpoints of an instance."""
 
     def __init__(
         self,
@@ -104,20 +104,20 @@ class CrowdSecClient:
         self._session = session
         self._metrics_url = metrics_url.rstrip("/")
         self._lapi_url = lapi_url.rstrip("/")
-        # Beim Kopieren aus der cscli-Ausgabe rutscht leicht Leerraum mit. Die
-        # ID hat nie welchen, beim Passwort wird nur gewarnt statt korrigiert.
+        # Copying from the cscli output easily drags whitespace along. The ID
+        # never has any; for the password we only warn instead of correcting.
         self._machine_id = machine_id.strip()
         self._machine_password = machine_password
         if machine_password != machine_password.strip():
             _LOGGER.warning(
-                "Das Machine-Passwort beginnt oder endet mit Leerraum — beim "
-                "Kopieren mit übernommen?"
+                "The machine password starts or ends with whitespace — copied "
+                "along by accident?"
             )
         self._bouncer_api_key = bouncer_api_key or None
         self._ssl: bool | None = None if verify_ssl else False
-        # Ohne eigenen User-Agent erbt die Anfrage den von Home Assistant, und
-        # CrowdSec lehnt den Login ab, weil er sich nicht als name/version
-        # parsen lässt.
+        # Without its own user agent the request inherits the one from Home
+        # Assistant, and CrowdSec rejects the login because it cannot be parsed
+        # as name/version.
         self._headers = {"User-Agent": USER_AGENT}
         self._timeout = aiohttp.ClientTimeout(total=timeout)
         self._token: str | None = None
@@ -126,13 +126,13 @@ class CrowdSecClient:
 
     @property
     def has_bouncer_key(self) -> bool:
-        """Ob exakte Decision-Abfragen über die Bouncer-API möglich sind."""
+        """Whether exact decision queries via the bouncer API are possible."""
         return self._bouncer_api_key is not None
 
     # -- Metrics ----------------------------------------------------------
 
     async def async_get_metrics(self) -> MetricSet:
-        """Scrape den Prometheus-Endpunkt."""
+        """Scrape the Prometheus endpoint."""
         try:
             async with self._session.get(
                 self._metrics_url,
@@ -142,27 +142,27 @@ class CrowdSecClient:
             ) as response:
                 if response.status in (401, 403):
                     raise CrowdSecAuthError(
-                        f"Metrics-Endpunkt verweigert den Zugriff ({response.status})",
+                        f"Metrics endpoint denied access ({response.status})",
                         ENDPOINT_METRICS,
                     )
                 if response.status != 200:
                     raise CrowdSecConnectionError(
-                        f"Metrics-Endpunkt antwortete mit HTTP {response.status}"
+                        f"Metrics endpoint answered with HTTP {response.status}"
                     )
                 text = await response.text()
         except asyncio.TimeoutError as err:
-            raise CrowdSecConnectionError("Zeitüberschreitung beim Metrics-Scrape") from err
+            raise CrowdSecConnectionError("Timeout during the metrics scrape") from err
         except aiohttp.ClientError as err:
-            raise CrowdSecConnectionError(f"Metrics-Endpunkt nicht erreichbar: {err}") from err
+            raise CrowdSecConnectionError(f"Metrics endpoint unreachable: {err}") from err
 
         if not text.strip():
-            raise CrowdSecConnectionError("Metrics-Endpunkt lieferte eine leere Antwort")
+            raise CrowdSecConnectionError("Metrics endpoint returned an empty response")
         return MetricSet(parse_prometheus(text))
 
     # -- LAPI -------------------------------------------------------------
 
     async def _async_token(self, force: bool = False) -> str:
-        """Liefere ein gültiges Machine-JWT, ggf. per Login."""
+        """Return a valid machine JWT, logging in if necessary."""
         async with self._login_lock:
             now = datetime.now(timezone.utc)
             if (
@@ -187,12 +187,12 @@ class CrowdSecClient:
                     timeout=self._timeout,
                 ) as response:
                     body = await response.text()
-                    # Länge und gekürzter Hash statt Passwort: genug, um einen
-                    # Tippfehler gegen den Sollwert zu prüfen, aber nicht
-                    # umkehrbar.
+                    # Length and truncated hash instead of the password:
+                    # enough to check a typo against the expected value, but
+                    # not reversible.
                     _LOGGER.debug(
-                        "LAPI-Login an %s für machine_id %r "
-                        "(Passwort: %d Zeichen, sha256 %s): HTTP %s, %d Byte Antwort",
+                        "LAPI login to %s for machine_id %r "
+                        "(password: %d characters, sha256 %s): HTTP %s, %d byte response",
                         url,
                         self._machine_id,
                         len(self._machine_password),
@@ -202,33 +202,33 @@ class CrowdSecClient:
                     )
                     if response.status in (401, 403):
                         raise CrowdSecAuthError(
-                            f"LAPI wies den Login ab (HTTP {response.status}): "
+                            f"LAPI rejected the login (HTTP {response.status}): "
                             f"{body.strip()[:200]}",
                             ENDPOINT_LAPI,
                         )
                     if response.status != 200:
                         raise CrowdSecConnectionError(
-                            f"LAPI-Login antwortete mit HTTP {response.status}: "
+                            f"LAPI login answered with HTTP {response.status}: "
                             f"{body.strip()[:200]}"
                         )
                     try:
                         data = json.loads(body) if body.strip() else None
                     except ValueError as err:
                         raise CrowdSecConnectionError(
-                            "LAPI-Login lieferte kein JSON — antwortet dort wirklich "
-                            "CrowdSec und kein Proxy?"
+                            "LAPI login did not return JSON — is that really "
+                            "CrowdSec answering and not a proxy?"
                         ) from err
             except asyncio.TimeoutError as err:
-                raise CrowdSecConnectionError("Zeitüberschreitung beim LAPI-Login") from err
+                raise CrowdSecConnectionError("Timeout during the LAPI login") from err
             except aiohttp.ClientError as err:
-                raise CrowdSecConnectionError(f"LAPI nicht erreichbar: {err}") from err
+                raise CrowdSecConnectionError(f"LAPI unreachable: {err}") from err
 
             token = (data or {}).get("token")
             if not token:
-                # HTTP 200 ohne Token ist kein Anmeldefehler, sondern eine
-                # unerwartete Antwort — die beiden nicht vermischen.
+                # HTTP 200 without a token is not an authentication failure but
+                # an unexpected response — do not conflate the two.
                 raise CrowdSecConnectionError(
-                    "LAPI-Login antwortete mit 200, aber ohne Token: "
+                    "LAPI login answered with 200 but without a token: "
                     f"{sorted((data or {}).keys())}"
                 )
 
@@ -245,7 +245,7 @@ class CrowdSecClient:
         params: dict[str, str] | None = None,
         payload: Any = None,
     ) -> Any:
-        """Anfrage an die LAPI mit Machine-Auth, einmaliger Retry bei 401."""
+        """Request to the LAPI with machine auth, retried once on a 401."""
         for attempt in range(2):
             token = await self._async_token(force=attempt > 0)
             try:
@@ -260,61 +260,60 @@ class CrowdSecClient:
                 ) as response:
                     if response.status in (401, 403):
                         if attempt == 0:
-                            # Token evtl. serverseitig verfallen: neu anmelden.
+                            # Token may have expired server-side: log in again.
                             continue
                         body = await response.text()
                         raise CrowdSecAuthError(
-                            f"LAPI verweigert {path} trotz gültigem Token "
+                            f"LAPI denies {path} despite a valid token "
                             f"(HTTP {response.status}): {body.strip()[:200]}",
                             ENDPOINT_ALERTS,
                         )
                     if response.status not in (200, 201):
                         body = await response.text()
                         raise CrowdSecConnectionError(
-                            f"LAPI {path} antwortete mit HTTP {response.status}: "
+                            f"LAPI {path} answered with HTTP {response.status}: "
                             f"{body.strip()[:200]}"
                         )
                     return await response.json(content_type=None)
             except asyncio.TimeoutError as err:
                 raise CrowdSecConnectionError(
-                    f"Zeitüberschreitung bei LAPI {path}"
+                    f"Timeout on LAPI {path}"
                 ) from err
             except aiohttp.ClientError as err:
-                raise CrowdSecConnectionError(f"LAPI {path} fehlgeschlagen: {err}") from err
+                raise CrowdSecConnectionError(f"LAPI {path} failed: {err}") from err
 
-        raise CrowdSecAuthError(f"LAPI verweigert {path}", ENDPOINT_ALERTS)
+        raise CrowdSecAuthError(f"LAPI denies {path}", ENDPOINT_ALERTS)
 
     async def _async_alerts_window(
         self, window: Window, limit: int
     ) -> list[dict[str, Any]]:
-        """Eine einzelne Alert-Abfrage über ein Zeitfenster."""
+        """A single alert query over one time window."""
         params = {**window_params(window), "limit": str(limit)}
         data = await self._async_lapi_request("GET", "/v1/alerts", params)
         if not data:
             return []
         if not isinstance(data, list):
-            raise CrowdSecConnectionError("LAPI /v1/alerts lieferte kein Array")
+            raise CrowdSecConnectionError("LAPI /v1/alerts did not return an array")
         return [alert for alert in data if isinstance(alert, dict)]
 
     async def async_get_alerts(
         self, since: str = ALERTS_SINCE, limit: int = DEFAULT_ALERTS_LIMIT
     ) -> AlertResult:
-        """Alerts eines Zeitfensters, standardmäßig der letzten 24 Stunden.
+        """Alerts of a time window, by default the last 24 hours.
 
-        Die LAPI kennt keine Pagination: Bei mehr Treffern als ``limit``
-        schneidet sie ab. Passiert das, wird das Zeitfenster halbiert und in
-        Teilen erneut abgefragt. Erst wenn auch ein Fenster von einer Minute
-        noch anschlägt oder die Teilungstiefe erschöpft ist, gilt das Ergebnis
-        als abgeschnitten.
+        The LAPI has no pagination: with more hits than ``limit`` it truncates.
+        When that happens, the time window is halved and queried again in
+        parts. Only when even a one-minute window still hits the limit, or the
+        split depth is exhausted, is the result considered truncated.
         """
         minutes = parse_duration(since)
         if minutes is None:
-            raise ValueError(f"Unbrauchbares Zeitfenster: {since!r}")
+            raise ValueError(f"Unusable time window: {since!r}")
 
         collected: dict[str, dict[str, Any]] = {}
         truncated = False
-        # (Fenster, verbleibende Teilungen) — iterativ statt rekursiv, damit
-        # die Zahl der Anfragen jederzeit ablesbar bleibt.
+        # (window, remaining splits) — iterative instead of recursive so that
+        # the number of requests stays readable at any time.
         pending: list[tuple[Window, int]] = [(Window(minutes, 0), MAX_WINDOW_SPLITS)]
 
         while pending:
@@ -327,13 +326,13 @@ class CrowdSecClient:
 
             halves = split_window(window) if splits_left > 0 else None
             if halves is None:
-                # Nicht weiter teilbar: das Teilergebnis ist besser als nichts,
-                # aber die Zahlen sind unvollständig.
+                # Cannot be split further: the partial result is better than
+                # nothing, but the numbers are incomplete.
                 self._collect(collected, alerts)
                 truncated = True
                 _LOGGER.debug(
-                    "Alert-Fenster %s liefert weiterhin %d Treffer am Limit — "
-                    "Ergebnis unvollständig",
+                    "Alert window %s still returns %d hits at the limit — "
+                    "result incomplete",
                     window,
                     len(alerts),
                 )
@@ -347,12 +346,12 @@ class CrowdSecClient:
     def _collect(
         target: dict[str, dict[str, Any]], alerts: list[dict[str, Any]]
     ) -> None:
-        """Übernimm Alerts und halte Überschneidungen der Fenster heraus."""
+        """Take over alerts and keep overlaps of the windows out."""
         for index, alert in enumerate(alerts):
             key = alert_id(alert) or f"anon:{len(target)}:{index}"
             target.setdefault(key, alert)
 
-    # -- Decisions setzen und löschen -------------------------------------
+    # -- Creating and deleting decisions ----------------------------------
 
     async def async_ban_ip(
         self,
@@ -360,10 +359,10 @@ class CrowdSecClient:
         duration: str = DEFAULT_BAN_DURATION,
         reason: str = DEFAULT_BAN_REASON,
     ) -> None:
-        """Setze eine Ban-Decision über einen selbst erzeugten Alert.
+        """Create a ban decision via a self-generated alert.
 
-        Die LAPI kennt keinen Weg, eine Decision einzeln anzulegen — sie hängt
-        immer an einem Alert. Genau das macht ``cscli decisions add`` auch.
+        The LAPI offers no way to create a decision on its own — it always
+        hangs off an alert. That is exactly what ``cscli decisions add`` does.
         """
         now = datetime.now(timezone.utc).isoformat()
         scenario = f"manual '{reason}' from 'hass'"
@@ -396,7 +395,7 @@ class CrowdSecClient:
         await self._async_lapi_request("POST", "/v1/alerts", payload=[alert])
 
     async def async_unban_ip(self, ip: str) -> int:
-        """Lösche alle Decisions zu einer IP; liefert deren Anzahl."""
+        """Delete all decisions for an IP; returns their count."""
         data = await self._async_lapi_request(
             "DELETE", "/v1/decisions", {"scope": "Ip", "value": ip}
         )
@@ -409,11 +408,10 @@ class CrowdSecClient:
         return 0
 
     async def async_get_active_decision_count(self) -> int | None:
-        """Anzahl aktiver Decisions über die Bouncer-API.
+        """Number of active decisions via the bouncer API.
 
-        ``None``, wenn kein Bouncer-Key konfiguriert ist oder der Endpunkt
-        nichts zu melden hat — dann übernimmt die Metrik
-        ``cs_active_decisions``.
+        ``None`` if no bouncer key is configured or the endpoint has nothing to
+        report — the ``cs_active_decisions`` metric then takes over.
         """
         if self._bouncer_api_key is None:
             return None
@@ -426,43 +424,43 @@ class CrowdSecClient:
             ) as response:
                 if response.status in (401, 403):
                     raise CrowdSecAuthError(
-                        "Bouncer-API-Key wurde abgelehnt", ENDPOINT_BOUNCER
+                        "Bouncer API key was rejected", ENDPOINT_BOUNCER
                     )
                 if response.status == 404:
-                    # Nicht jede CrowdSec-Version liefert hier ein leeres
-                    # Array — ein 404 heißt "nichts vorhanden", nicht "kaputt".
+                    # Not every CrowdSec version returns an empty array here —
+                    # a 404 means "nothing there", not "broken".
                     _LOGGER.debug(
-                        "/v1/decisions antwortete mit 404, Fallback auf die Metrik"
+                        "/v1/decisions answered with 404, falling back to the metric"
                     )
                     return None
                 if response.status != 200:
                     raise CrowdSecConnectionError(
-                        f"LAPI /v1/decisions antwortete mit HTTP {response.status}"
+                        f"LAPI /v1/decisions answered with HTTP {response.status}"
                     )
                 data = await response.json(content_type=None)
         except asyncio.TimeoutError as err:
-            raise CrowdSecConnectionError("Zeitüberschreitung bei /v1/decisions") from err
+            raise CrowdSecConnectionError("Timeout on /v1/decisions") from err
         except aiohttp.ClientError as err:
-            raise CrowdSecConnectionError(f"/v1/decisions fehlgeschlagen: {err}") from err
+            raise CrowdSecConnectionError(f"/v1/decisions failed: {err}") from err
 
         if not data:
             return 0
         if not isinstance(data, list):
-            raise CrowdSecConnectionError("LAPI /v1/decisions lieferte kein Array")
+            raise CrowdSecConnectionError("LAPI /v1/decisions did not return an array")
         return len(data)
 
     async def async_validate(self) -> None:
-        """Prüfe alle Zugänge, die der Coordinator später braucht.
+        """Check every access path the coordinator will need later.
 
-        Auch ``/v1/alerts``: Ein erfolgreicher Login sagt nichts darüber aus,
-        ob die Alert-Route erreichbar ist — scheitert sie erst beim Setup,
-        landet man in einer Reauth-Schleife.
+        ``/v1/alerts`` included: a successful login says nothing about whether
+        the alert route is reachable — if it only fails during setup, you end
+        up in a reauth loop.
         """
         await self.async_get_metrics()
         await self._async_token(force=True)
-        # Bewusst ein winziges Fenster: Geprüft wird die Erreichbarkeit der
-        # Route, nicht der Inhalt — die Einrichtung soll nicht an tausenden
-        # Alerts hängen.
+        # Deliberately a tiny window: what is checked is the reachability of
+        # the route, not the content — setup should not hang on thousands of
+        # alerts.
         await self._async_alerts_window(Window(60, 0), 1)
         if self._bouncer_api_key is not None:
             await self.async_get_active_decision_count()

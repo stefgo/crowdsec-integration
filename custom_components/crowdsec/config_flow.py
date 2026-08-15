@@ -1,4 +1,4 @@
-"""Config- und Options-Flow der CrowdSec-Integration."""
+"""Config and options flow of the CrowdSec integration."""
 
 from __future__ import annotations
 
@@ -56,24 +56,24 @@ from .const import (
 
 _LOGGER = logging.getLogger(__name__)
 
-# Echtes Passwortfeld: verdeckt die Eingabe und hält die Autovervollständigung
-# des Browsers von einem einfachen Textfeld fern.
+# A real password field: it masks the input and keeps the browser's
+# autocompletion away from a plain text field.
 SECRET_SELECTOR = TextSelector(TextSelectorConfig(type=TextSelectorType.PASSWORD))
 
-# Eingabefeld statt Schieberegler: die Anzahl der Intervalle wird direkt getippt.
+# Input box instead of a slider: the number of intervals is typed directly.
 BOUNCER_IDLE_INTERVALS_SELECTOR = NumberSelector(
     NumberSelectorConfig(min=1, max=100, step=1, mode=NumberSelectorMode.BOX)
 )
 
-# Gilt pro Anfrage; die Obergrenze hält ihn deutlich unter dem Abfrageintervall.
+# Applies per request; the upper bound keeps it well below the poll interval.
 TIMEOUT_SELECTOR = NumberSelector(
     NumberSelectorConfig(
         min=1, max=60, step=1, mode=NumberSelectorMode.BOX, unit_of_measurement="s"
     )
 )
 
-# Hohe Werte vergrößern die Antwort der LAPI spürbar — Alerts sind umfangreiche
-# Objekte samt Decisions.
+# High values noticeably enlarge the LAPI response — alerts are bulky objects
+# including their decisions.
 ALERTS_LIMIT_SELECTOR = NumberSelector(
     NumberSelectorConfig(min=100, max=10000, step=1, mode=NumberSelectorMode.BOX)
 )
@@ -94,19 +94,19 @@ STEP_USER_SCHEMA = vol.Schema(
 
 
 def build_unique_id(user_input: dict[str, Any]) -> str:
-    """Kennung einer Instanz: LAPI-Adresse plus Machine-ID.
+    """Identifier of an instance: LAPI address plus machine ID.
 
-    Die Adresse allein reicht nicht — hinter derselben URL können über
-    getrennte Machines mehrere Engines liegen, und ``localhost:8080`` ist aus
-    Sicht verschiedener Tunnel nicht dieselbe Instanz.
+    The address alone is not enough — several engines can sit behind the same
+    URL via separate machines, and ``localhost:8080`` is not the same instance
+    when seen through different tunnels.
     """
     parts = urlsplit(user_input[CONF_LAPI_URL].rstrip("/"))
     machine = str(user_input.get(CONF_MACHINE_ID, "")).strip()
     return f"{parts.scheme}://{parts.netloc}".lower() + f"|{machine}"
 
 
-# Jeder der drei Zugänge bekommt eine eigene Meldung — sonst rät man, welcher
-# abgelehnt hat.
+# Each of the three access paths gets its own message — otherwise you are left
+# guessing which one rejected you.
 AUTH_ERRORS = {
     ENDPOINT_METRICS: "invalid_auth_metrics",
     ENDPOINT_ALERTS: "invalid_auth_alerts",
@@ -117,29 +117,29 @@ AUTH_ERRORS = {
 async def _async_validate(
     hass, user_input: dict[str, Any]
 ) -> tuple[str, str] | None:
-    """Verbindung testen.
+    """Test the connection.
 
-    Liefert ``(fehlerschlüssel, klartext)`` oder ``None`` bei Erfolg. Der
-    Klartext enthält Endpunkt, Statuscode und die Antwort von CrowdSec und
-    wird im Formular mit angezeigt — sonst rät man im Log herum.
+    Returns ``(error_key, plain text)`` or ``None`` on success. The plain text
+    contains the endpoint, status code and the response from CrowdSec and is
+    shown in the form — otherwise you end up guessing in the log.
     """
     client = build_client(hass, user_input, user_input.get(CONF_VERIFY_SSL, True))
     try:
         await client.async_validate()
     except CrowdSecAuthError as err:
-        _LOGGER.debug("Prüfung abgelehnt (%s): %s", err.endpoint, err)
+        _LOGGER.debug("Validation rejected (%s): %s", err.endpoint, err)
         return AUTH_ERRORS.get(err.endpoint, "invalid_auth"), str(err)
     except CrowdSecConnectionError as err:
-        _LOGGER.debug("Prüfung fehlgeschlagen: %s", err)
+        _LOGGER.debug("Validation failed: %s", err)
         return "cannot_connect", str(err)
-    except Exception as err:  # noqa: BLE001 - unerwartetes soll den Flow nicht sprengen
-        _LOGGER.exception("Unerwarteter Fehler beim Prüfen der CrowdSec-Instanz")
+    except Exception as err:  # noqa: BLE001 - the unexpected must not break the flow
+        _LOGGER.exception("Unexpected error while validating the CrowdSec instance")
         return "unknown", f"{type(err).__name__}: {err}"
     return None
 
 
 class CrowdSecConfigFlow(ConfigFlow, domain=DOMAIN):
-    """Einrichtung über die Oberfläche; mehrere Instanzen sind erlaubt."""
+    """Setup through the UI; several instances are allowed."""
 
     VERSION = 2
 
@@ -149,7 +149,7 @@ class CrowdSecConfigFlow(ConfigFlow, domain=DOMAIN):
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """Erste und einzige Eingabemaske."""
+        """First and only input form."""
         errors: dict[str, str] = {}
         detail = ""
 
@@ -164,8 +164,8 @@ class CrowdSecConfigFlow(ConfigFlow, domain=DOMAIN):
                 )
             errors["base"], detail = result
 
-        # Geheimnisse bewusst nicht vorbefüllen: Sonst schickt ein erneutes
-        # Absenden unsichtbar denselben falschen Wert noch einmal.
+        # Deliberately do not prefill secrets: otherwise submitting again
+        # would invisibly send the same wrong value once more.
         suggested = {
             key: value
             for key, value in (user_input or {}).items()
@@ -184,14 +184,14 @@ class CrowdSecConfigFlow(ConfigFlow, domain=DOMAIN):
     async def async_step_reauth(
         self, entry_data: dict[str, Any]
     ) -> ConfigFlowResult:
-        """Wird ausgelöst, wenn die LAPI die Anmeldedaten ablehnt."""
+        """Triggered when the LAPI rejects the credentials."""
         self._reauth_data = dict(entry_data)
         return await self.async_step_reauth_confirm()
 
     async def async_step_reauth_confirm(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """Neue Zugangsdaten abfragen."""
+        """Ask for new credentials."""
         errors: dict[str, str] = {}
         detail = ""
         entry = self._get_reauth_entry()
@@ -200,8 +200,8 @@ class CrowdSecConfigFlow(ConfigFlow, domain=DOMAIN):
             merged = {**self._reauth_data, **user_input}
             result = await _async_validate(self.hass, merged)
             if result is None:
-                # Die Machine-ID gehört zur Kennung — wird sie hier getauscht,
-                # muss die Kennung mitwandern.
+                # The machine ID is part of the identifier — if it is swapped
+                # here, the identifier has to move with it.
                 return self.async_update_reload_and_abort(
                     entry, data=merged, unique_id=build_unique_id(merged)
                 )
@@ -226,12 +226,12 @@ class CrowdSecConfigFlow(ConfigFlow, domain=DOMAIN):
     @staticmethod
     @callback
     def async_get_options_flow(config_entry) -> OptionsFlow:
-        """Options-Flow für Intervall und Schwellwerte."""
+        """Options flow for the interval and the thresholds."""
         return CrowdSecOptionsFlow()
 
 
 class CrowdSecOptionsFlow(OptionsFlow):
-    """Pollintervall und Störungs-Schwellwerte anpassen."""
+    """Adjust the poll interval and the problem thresholds."""
 
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
@@ -240,14 +240,14 @@ class CrowdSecOptionsFlow(OptionsFlow):
         options = dict(self.config_entry.options)
 
         if user_input is not None:
-            # Die Number-Selectoren liefern Floats; intern wird ganzzahlig gerechnet.
+            # The number selectors return floats; internally we work with ints.
             user_input[CONF_BOUNCER_IDLE_INTERVALS] = int(
                 user_input[CONF_BOUNCER_IDLE_INTERVALS]
             )
             user_input[CONF_TIMEOUT] = int(user_input[CONF_TIMEOUT])
             user_input[CONF_ALERTS_LIMIT] = int(user_input[CONF_ALERTS_LIMIT])
-            # Ein Update-Zyklus stellt mehrere Anfragen. Reicht schon eine
-            # einzelne bis ins nächste Intervall, überholen sich die Zyklen.
+            # An update cycle makes several requests. If a single one already
+            # reaches into the next interval, the cycles overtake each other.
             if user_input[CONF_TIMEOUT] >= int(user_input[CONF_SCAN_INTERVAL]):
                 errors[CONF_TIMEOUT] = "timeout_too_long"
             else:

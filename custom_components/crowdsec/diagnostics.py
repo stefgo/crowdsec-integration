@@ -1,4 +1,4 @@
-"""Diagnosedaten für Support-Anfragen."""
+"""Diagnostics data for support requests."""
 
 from __future__ import annotations
 
@@ -16,7 +16,7 @@ TO_REDACT = {CONF_MACHINE_ID, CONF_MACHINE_PASSWORD, CONF_BOUNCER_API_KEY}
 
 
 def _redact_addresses(data: dict[str, Any]) -> None:
-    """Ersetze IP-Adressen durch Platzhalter, Häufigkeiten bleiben erhalten."""
+    """Replace IP addresses with placeholders; the counts are preserved."""
     if isinstance(data.get("top_attackers"), list):
         data["top_attackers"] = [
             {**entry, "ip": "**REDACTED**"} if isinstance(entry, dict) else entry
@@ -29,7 +29,7 @@ def _redact_addresses(data: dict[str, Any]) -> None:
 async def async_get_config_entry_diagnostics(
     hass: HomeAssistant, entry: CrowdSecConfigEntry
 ) -> dict[str, Any]:
-    """Konfiguration (redigiert), letzter Datenstand und die Rohmetriken."""
+    """Configuration (redacted), latest data and the raw metrics."""
     coordinator = entry.runtime_data
     data = asdict(coordinator.data) if coordinator.data else None
 
@@ -43,7 +43,7 @@ async def async_get_config_entry_diagnostics(
         "config": async_redact_data(dict(entry.data), TO_REDACT),
         "options": dict(entry.options),
         "data": data,
-        # Ohne die rohen Zähler lässt sich bei einem Rechenfehler nicht
-        # nachvollziehen, was CrowdSec tatsächlich geliefert hat.
+        # Without the raw counters there is no way to tell what CrowdSec
+        # actually returned when a calculation goes wrong.
         "metrics": coordinator.raw_metrics,
     }

@@ -1,4 +1,4 @@
-"""Tests für Ratenbildung und Neustart-Erkennung."""
+"""Tests for rate calculation and restart detection."""
 
 from __future__ import annotations
 
@@ -28,9 +28,9 @@ def test_rate_per_minute():
 def test_restart_discards_interval():
     tracker = RateTracker()
     tracker.update({"lines": 1000.0}, START, 0.0)
-    # Prozess neu gestartet: Counter zurück auf 5, neue Startzeit.
+    # Process restarted: counter back to 5, new start time.
     assert tracker.update({"lines": 5.0}, START + 500, 60.0) is None
-    # Danach wird wieder normal gerechnet.
+    # After that the calculation is back to normal.
     window = tracker.update({"lines": 65.0}, START + 500, 120.0)
     assert window is not None
     assert window.per_minute("lines") == 60.0
@@ -70,10 +70,10 @@ def test_error_ratio():
 
 
 def test_error_ratio_treats_missing_counter_as_zero():
-    # Fehlerfreier Parser: ko-Metrik fehlt komplett -> 0 %, nicht „unbekannt".
+    # Error-free parser: the ko metric is missing entirely -> 0 %, not "unknown".
     assert error_ratio(1000.0, None) == 0.0
-    # Umgekehrt: nur Fehler, keine ok-Metrik -> 100 %.
+    # The other way round: only errors, no ok metric -> 100 %.
     assert error_ratio(None, 5.0) == 100.0
-    # Ohne verarbeitete Zeilen bleibt es unbekannt.
+    # Without processed lines it stays unknown.
     assert error_ratio(None, 0.0) is None
     assert error_ratio(0.0, None) is None

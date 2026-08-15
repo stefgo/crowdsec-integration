@@ -1,4 +1,4 @@
-"""Update-Coordinator: holt beide Endpunkte und leitet die Kennzahlen ab."""
+"""Update coordinator: fetches both endpoints and derives the metrics."""
 
 from __future__ import annotations
 
@@ -59,18 +59,18 @@ from .rates import RateTracker, error_ratio
 
 _LOGGER = logging.getLogger(__name__)
 
-# Labelnamen, unter denen CrowdSec je nach Version die LAPI-Route ablegt.
+# Label names under which CrowdSec stores the LAPI route, depending on version.
 ROUTE_LABELS = ("endpoint", "route", "path")
 
-# Mehr Ban-Events pro Zyklus deuten auf einen Nachlauf hin (Instanz war lange
-# weg, Alert-Fenster füllt sich schlagartig). Dann lieber eine Sammelmeldung
-# als hunderte Events, die den Bus fluten.
+# More ban events per cycle point to a catch-up (the instance was away for a
+# long time, the alert window fills up all at once). In that case a single
+# summary message is better than hundreds of events flooding the bus.
 MAX_BAN_EVENTS_PER_CYCLE = 25
 
 
 @dataclass(slots=True)
 class CrowdSecData:
-    """Alles, was die Entitäten eines Update-Zyklus brauchen."""
+    """Everything the entities need from one update cycle."""
 
     reachable: bool = False
     errors: list[str] = field(default_factory=list)
@@ -111,7 +111,7 @@ class CrowdSecData:
 
 
 def _route_is_decisions(sample: Sample) -> bool:
-    """Trifft das Sample eine der Decision-Routen der LAPI?"""
+    """Does the sample hit one of the decision routes of the LAPI?"""
     for label in ROUTE_LABELS:
         value = sample.labels.get(label)
         if value and value.startswith("/v1/decisions"):
@@ -120,7 +120,7 @@ def _route_is_decisions(sample: Sample) -> bool:
 
 
 class CrowdSecCoordinator(DataUpdateCoordinator[CrowdSecData]):
-    """Pollt eine CrowdSec-Instanz und hält den Zählerverlauf."""
+    """Polls a CrowdSec instance and keeps the counter history."""
 
     def __init__(
         self,
@@ -141,13 +141,13 @@ class CrowdSecCoordinator(DataUpdateCoordinator[CrowdSecData]):
         self._rates = RateTracker()
         self._seen_traffic = False
         self._bouncer_idle_cycles = 0
-        # Kennungen der zuletzt gesehenen Alerts. ``None`` heißt „noch nichts
-        # gesehen" — dann werden keine Ban-Events gefeuert.
+        # Identifiers of the most recently seen alerts. ``None`` means
+        # "nothing seen yet" — then no ban events are fired.
         self._known_alert_ids: set[str] | None = None
         self._device_version: str | None = None
         self._truncation_reported = False
-        # Rohe CrowdSec-Metriken des letzten erfolgreichen Scrapes, nur für
-        # die Diagnosedaten.
+        # Raw CrowdSec metrics of the last successful scrape, only for the
+        # diagnostics data.
         self.raw_metrics: dict[str, list[dict[str, Any]]] = {}
         self._parse_threshold = float(
             options.get(CONF_PARSE_ERROR_THRESHOLD, DEFAULT_PARSE_ERROR_THRESHOLD)
@@ -157,16 +157,16 @@ class CrowdSecCoordinator(DataUpdateCoordinator[CrowdSecData]):
         )
         self._alerts_limit = int(options.get(CONF_ALERTS_LIMIT, DEFAULT_ALERTS_LIMIT))
 
-    # -- Update-Zyklus ----------------------------------------------------
+    # -- Update cycle -----------------------------------------------------
 
     async def _async_update_data(self) -> CrowdSecData:
         started = monotonic()
         previous = self.data
         data = CrowdSecData()
 
-        # Die drei Abfragen hängen nicht voneinander ab. Nacheinander summieren
-        # sich im schlechtesten Fall drei Zeitlimits — parallel bleibt der
-        # Zyklus innerhalb eines einzigen.
+        # The three queries do not depend on each other. Run one after another,
+        # three timeouts add up in the worst case — in parallel the cycle stays
+        # within a single one.
         metrics_result, alerts_result, decisions_result = await asyncio.gather(
             self.client.async_get_metrics(),
             self.client.async_get_alerts(limit=self._alerts_limit),
@@ -185,7 +185,7 @@ class CrowdSecCoordinator(DataUpdateCoordinator[CrowdSecData]):
             self.raw_metrics = metrics.as_dict(METRIC_PREFIX)
             self._apply_metrics(data, metrics)
         else:
-            # Ohne frische Counter ist jeder Ratenvergleich wertlos.
+            # Without fresh counters every rate comparison is worthless.
             self._rates.reset()
 
         if alerts is not None:
@@ -198,12 +198,12 @@ class CrowdSecCoordinator(DataUpdateCoordinator[CrowdSecData]):
         if data.reachable:
             data.last_update = now
         else:
-            # Zeitstempel des letzten *erfolgreichen* Scrapes behalten — genau
-            # daran erkennt eine Automation veraltete Werte.
+            # Keep the timestamp of the last *successful* scrape — that is
+            # exactly how an automation recognises stale values.
             data.last_update = previous.last_update if previous else None
             if previous is not None:
-                # Diese beiden Zeitstempel überdauern einen Ausfall bewusst:
-                # Sie beschreiben die Vergangenheit, nicht den aktuellen Stand.
+                # These two timestamps deliberately survive an outage: they
+                # describe the past, not the current state.
                 if data.last_restart is None:
                     data.last_restart = previous.last_restart
                 if data.last_alert is None:
@@ -216,11 +216,11 @@ class CrowdSecCoordinator(DataUpdateCoordinator[CrowdSecData]):
     def _unwrap(
         self, data: CrowdSecData, result: Any, expected: type
     ) -> Any | None:
-        """Werte ein Ergebnis aus ``asyncio.gather`` aus.
+        """Evaluate one result from ``asyncio.gather``.
 
-        Erwartete Fehler landen als Meldung in den Daten (bzw. lösen einen
-        Reauth aus); alles andere wird weitergereicht, damit es nicht
-        stillschweigend als „nicht erreichbar" durchgeht.
+        Expected errors end up as a message in the data (or trigger a reauth);
+        everything else is passed on so that it does not silently pass as
+        "not reachable".
         """
         if isinstance(result, CrowdSecAuthError):
             self._handle_auth_error(data, result)
@@ -235,19 +235,18 @@ class CrowdSecCoordinator(DataUpdateCoordinator[CrowdSecData]):
         return None
 
     def _handle_auth_error(self, data: CrowdSecData, err: CrowdSecAuthError) -> None:
-        """Entscheide, ob ein Zugriffsfehler den Eintrag blockieren muss.
+        """Decide whether an access error has to block the entry.
 
-        Nur ein abgelehnter Login heißt „falsche Zugangsdaten" und rechtfertigt
-        einen Reauth-Dialog. Verweigert eine einzelne Route trotz gültigem
-        Token, laufen die übrigen Entitäten weiter — der Ausfall steht in der
-        Störung.
+        Only a rejected login means "wrong credentials" and justifies a reauth
+        dialog. If a single route refuses despite a valid token, the remaining
+        entities keep running — the outage is listed in the problem flag.
         """
         if err.endpoint == ENDPOINT_LAPI:
             raise ConfigEntryAuthFailed(str(err)) from err
-        _LOGGER.warning("Zugriff auf %s verweigert: %s", err.endpoint, err)
+        _LOGGER.warning("Access to %s denied: %s", err.endpoint, err)
         data.errors.append(str(err))
 
-    # -- Auswertung -------------------------------------------------------
+    # -- Evaluation -------------------------------------------------------
 
     def _apply_metrics(self, data: CrowdSecData, metrics: MetricSet) -> None:
         data.version = metrics.label_of(METRIC_INFO, "version")
@@ -279,8 +278,8 @@ class CrowdSecCoordinator(DataUpdateCoordinator[CrowdSecData]):
         parse_ko = metrics.total(METRIC_PARSER_KO)
         lines = metrics.first_total((METRIC_PARSER_HITS, METRIC_READER_HITS))
         if lines is None and (parse_ok is not None or parse_ko is not None):
-            # Fehlender ok/ko-Counter zählt als 0 — CrowdSec exportiert die
-            # ko-Metrik erst nach dem ersten Parse-Fehler.
+            # A missing ok/ko counter counts as 0 — CrowdSec only exports the
+            # ko metric after the first parse error.
             lines = (parse_ok or 0.0) + (parse_ko or 0.0)
         data.lines_total = lines
 
@@ -302,7 +301,7 @@ class CrowdSecCoordinator(DataUpdateCoordinator[CrowdSecData]):
 
         window = self._rates.update(counters, start_time, monotonic())
         if window is None:
-            # Erster Zyklus oder Neustart: lieber „unbekannt" als ein Sprung.
+            # First cycle or restart: "unknown" is better than a jump.
             data.parse_error_rate = error_ratio(parse_ok, parse_ko)
             return
 
@@ -312,8 +311,8 @@ class CrowdSecCoordinator(DataUpdateCoordinator[CrowdSecData]):
         interval_rate = error_ratio(
             window.deltas.get(COUNTER_PARSE_OK), window.deltas.get(COUNTER_PARSE_KO)
         )
-        # Ohne Zeilen im Intervall gibt es keine Intervall-Quote — dann zeigt
-        # der Sensor die Quote über die gesamte Laufzeit.
+        # Without lines in the interval there is no interval ratio — the sensor
+        # then shows the ratio over the whole runtime.
         data.parse_error_rate = (
             interval_rate if interval_rate is not None else error_ratio(parse_ok, parse_ko)
         )
@@ -340,14 +339,14 @@ class CrowdSecCoordinator(DataUpdateCoordinator[CrowdSecData]):
         self._report_truncation(result.truncated)
 
     def _fire_ban_events(self, summary: AlertSummary) -> None:
-        """Feuere ein Event je neu erkanntem Ban."""
+        """Fire one event per newly detected ban."""
         fresh = new_bans(summary, self._known_alert_ids)
         if not fresh:
             return
         if len(fresh) > MAX_BAN_EVENTS_PER_CYCLE:
             _LOGGER.info(
-                "%d neue Bans in einem Zyklus — es werden nur die %d jüngsten "
-                "als Event gemeldet",
+                "%d new bans in one cycle — only the %d most recent ones are "
+                "reported as events",
                 len(fresh),
                 MAX_BAN_EVENTS_PER_CYCLE,
             )
@@ -365,7 +364,7 @@ class CrowdSecCoordinator(DataUpdateCoordinator[CrowdSecData]):
             )
 
     def _report_truncation(self, truncated: bool) -> None:
-        """Lege einen Reparaturhinweis an, wenn die 24h-Zahlen unvollständig sind."""
+        """Create a repair issue when the 24h numbers are incomplete."""
         if truncated == self._truncation_reported:
             return
         self._truncation_reported = truncated
@@ -392,11 +391,11 @@ class CrowdSecCoordinator(DataUpdateCoordinator[CrowdSecData]):
         )
 
     def _update_device_version(self, data: CrowdSecData) -> None:
-        """Halte die Firmware-Angabe des Geräts aktuell.
+        """Keep the firmware information of the device up to date.
 
-        Die Version steckt in ``cs_info`` und ändert sich beim Update von
-        CrowdSec. Ohne diesen Abgleich bliebe im Geräteregister für immer die
-        Version stehen, die beim ersten Start galt.
+        The version sits in ``cs_info`` and changes when CrowdSec is updated.
+        Without this comparison the device registry would forever show the
+        version that applied at the first start.
         """
         if data.version is None or data.version == self._device_version:
             return
@@ -407,8 +406,8 @@ class CrowdSecCoordinator(DataUpdateCoordinator[CrowdSecData]):
         registry = dr.async_get(self.hass)
         device = registry.async_get_device(identifiers={(DOMAIN, entry.entry_id)})
         if device is None:
-            # Die Entitäten sind noch nicht angelegt — sie tragen die Version
-            # dann ohnehin selbst ein.
+            # The entities have not been created yet — they will fill in the
+            # version themselves anyway.
             self._device_version = data.version
             return
         if device.sw_version != data.version:
@@ -416,7 +415,7 @@ class CrowdSecCoordinator(DataUpdateCoordinator[CrowdSecData]):
         self._device_version = data.version
 
     def _evaluate_problem(self, data: CrowdSecData) -> None:
-        """Sammelflag für Automationen setzen."""
+        """Set the aggregate flag for automations."""
         reasons: list[str] = []
 
         if not data.reachable:
@@ -427,7 +426,7 @@ class CrowdSecCoordinator(DataUpdateCoordinator[CrowdSecData]):
             and data.parse_error_rate > self._parse_threshold
         ):
             reasons.append(
-                f"Parse-Fehlerquote {data.parse_error_rate:.1f} % über Schwellwert "
+                f"Parse error rate {data.parse_error_rate:.1f} % above threshold "
                 f"{self._parse_threshold:.1f} %"
             )
 
@@ -435,7 +434,7 @@ class CrowdSecCoordinator(DataUpdateCoordinator[CrowdSecData]):
             if data.lines_per_minute > 0:
                 self._seen_traffic = True
             elif self._seen_traffic:
-                reasons.append("Keine Logzeilen mehr verarbeitet — CrowdSec sieht nichts")
+                reasons.append("No log lines processed any more — CrowdSec sees nothing")
 
         if data.bouncer_queries_per_minute is not None:
             if data.bouncer_queries_per_minute > 0:
@@ -444,13 +443,13 @@ class CrowdSecCoordinator(DataUpdateCoordinator[CrowdSecData]):
                 self._bouncer_idle_cycles += 1
                 if self._bouncer_idle_cycles >= self._bouncer_idle_limit:
                     reasons.append(
-                        f"Seit {self._bouncer_idle_cycles} Intervallen keine "
-                        "Bouncer-Abfragen — Decisions werden nicht durchgesetzt"
+                        f"No bouncer queries for {self._bouncer_idle_cycles} "
+                        "intervals — decisions are not being enforced"
                     )
 
         data.problem_reasons = reasons
         data.problem = bool(reasons)
 
 
-# Typisierter Entry: der Coordinator hängt in entry.runtime_data.
+# Typed entry: the coordinator lives in entry.runtime_data.
 CrowdSecConfigEntry = ConfigEntry[CrowdSecCoordinator]

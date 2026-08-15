@@ -1,8 +1,8 @@
-"""Schlanker Parser für das Prometheus-Textformat.
+"""Lean parser for the Prometheus text format.
 
-Bewusst ohne externe Abhängigkeit: CrowdSec liefert unter ``/metrics`` nur
-einfache Counter und Gauges, ein vollständiger Prometheus-Client wäre für die
-Integration unnötiger Ballast.
+Deliberately without an external dependency: under ``/metrics`` CrowdSec only
+returns simple counters and gauges, so a full Prometheus client would be
+needless ballast for the integration.
 """
 
 from __future__ import annotations
@@ -15,17 +15,17 @@ _ESCAPES = {"n": "\n", "t": "\t", '"': '"', "\\": "\\"}
 
 @dataclass(frozen=True, slots=True)
 class Sample:
-    """Ein einzelnes Metrik-Sample: Labels plus Wert."""
+    """A single metric sample: labels plus value."""
 
     labels: dict[str, str] = field(hash=False)
     value: float
 
 
 def _parse_labels(raw: str) -> dict[str, str]:
-    """Zerlege den Inhalt zwischen den geschweiften Klammern.
+    """Split the content between the curly braces.
 
-    Kommas und Anführungszeichen dürfen in Labelwerten vorkommen (escaped),
-    ein simples ``split(",")`` reicht deshalb nicht.
+    Commas and quotes may appear inside label values (escaped), so a simple
+    ``split(",")`` is not enough.
     """
     labels: dict[str, str] = {}
     index = 0
@@ -40,7 +40,7 @@ def _parse_labels(raw: str) -> dict[str, str]:
         if index >= length:
             break
         key = raw[start:index].strip()
-        index += 1  # '=' überspringen
+        index += 1  # skip '='
         while index < length and raw[index] == " ":
             index += 1
         if index >= length or raw[index] != '"':
@@ -55,7 +55,7 @@ def _parse_labels(raw: str) -> dict[str, str]:
                 continue
             buffer.append(raw[index])
             index += 1
-        index += 1  # schließendes '"'
+        index += 1  # closing '"'
 
         if key:
             labels[key] = "".join(buffer)
@@ -64,7 +64,7 @@ def _parse_labels(raw: str) -> dict[str, str]:
 
 
 def parse_prometheus(text: str) -> dict[str, list[Sample]]:
-    """Parse einen Prometheus-Textbody zu ``{metrikname: [Sample, ...]}``."""
+    """Parse a Prometheus text body into ``{metric_name: [Sample, ...]}``."""
     result: dict[str, list[Sample]] = {}
 
     for line in text.splitlines():
@@ -102,7 +102,7 @@ def parse_prometheus(text: str) -> dict[str, list[Sample]]:
 
 
 class MetricSet:
-    """Komfortabler Zugriff auf ein geparstes Metrik-Set."""
+    """Convenient access to a parsed metric set."""
 
     def __init__(self, samples: dict[str, list[Sample]]) -> None:
         self._samples = samples
@@ -111,13 +111,13 @@ class MetricSet:
         return name in self._samples
 
     def samples(self, name: str) -> list[Sample]:
-        """Alle Samples einer Metrik (leere Liste, wenn unbekannt)."""
+        """All samples of a metric (empty list if unknown)."""
         return self._samples.get(name, [])
 
     def total(
         self, name: str, predicate: Callable[[Sample], bool] | None = None
     ) -> float | None:
-        """Summe aller Samples einer Metrik, ``None`` wenn nicht vorhanden."""
+        """Sum of all samples of a metric, ``None`` if not present."""
         samples = self._samples.get(name)
         if samples is None:
             return None
@@ -126,7 +126,7 @@ class MetricSet:
         return float(sum(s.value for s in samples))
 
     def first_total(self, names: Iterable[str]) -> float | None:
-        """Summe der ersten vorhandenen Metrik aus ``names``."""
+        """Sum of the first metric from ``names`` that is present."""
         for name in names:
             value = self.total(name)
             if value is not None:
@@ -134,14 +134,14 @@ class MetricSet:
         return None
 
     def single(self, name: str) -> float | None:
-        """Wert einer Metrik ohne Labels (z. B. ``process_start_time_seconds``)."""
+        """Value of a metric without labels (e.g. ``process_start_time_seconds``)."""
         samples = self._samples.get(name)
         if not samples:
             return None
         return samples[0].value
 
     def group_sum(self, name: str, label: str) -> dict[str, float]:
-        """Summiere die Samples einer Metrik gruppiert nach einem Label."""
+        """Sum up the samples of a metric grouped by a label."""
         grouped: dict[str, float] = {}
         for sample in self._samples.get(name, []):
             key = sample.labels.get(label, "")
@@ -149,10 +149,10 @@ class MetricSet:
         return grouped
 
     def as_dict(self, prefix: str = "") -> dict[str, list[dict[str, object]]]:
-        """Serialisierbare Sicht für die Diagnosedaten.
+        """Serialisable view for the diagnostics data.
 
-        ``prefix`` filtert auf die interessanten Metriken — der Endpunkt
-        liefert daneben die komplette Go-Runtime, die niemandem hilft.
+        ``prefix`` filters down to the interesting metrics — alongside them the
+        endpoint also returns the complete Go runtime, which helps nobody.
         """
         return {
             name: [
@@ -163,7 +163,7 @@ class MetricSet:
         }
 
     def label_of(self, name: str, label: str) -> str | None:
-        """Labelwert des ersten Samples, etwa die Version aus ``cs_info``."""
+        """Label value of the first sample, e.g. the version from ``cs_info``."""
         for sample in self._samples.get(name, []):
             if label in sample.labels:
                 return sample.labels[label]

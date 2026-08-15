@@ -1,4 +1,4 @@
-"""Tests für die Auswertung der LAPI-Alerts."""
+"""Tests for the evaluation of the LAPI alerts."""
 
 from __future__ import annotations
 
@@ -27,7 +27,7 @@ def make_alert(
     simulated=False,
     created_at="2026-08-13T10:00:00Z",
 ):
-    """Ein Alert im Format der LAPI."""
+    """An alert in the format of the LAPI."""
     return {
         "id": alert_id_value,
         "created_at": created_at,
@@ -65,7 +65,7 @@ def test_repeated_source_counts_once_as_attacker():
     alerts = [make_alert(1), make_alert(2), make_alert(3)]
     summary = summarize_alerts(alerts, TOP)
     assert summary.alerts == 3
-    # Dreimal dieselbe IP ist ein Angreifer, nicht drei.
+    # The same IP three times is one attacker, not three.
     assert summary.unique_sources == 1
     assert summary.banned_sources == 1
     assert summary.top_source == "192.0.2.1"
@@ -81,7 +81,7 @@ def test_non_ban_decisions_do_not_count():
 
 
 def test_multiple_ban_decisions_yield_one_event():
-    # Ein Alert mit Ban auf IP und auf Range ist ein Vorgang.
+    # An alert with a ban on the IP and on the range is one incident.
     summary = summarize_alerts([make_alert(1, decisions=("ban", "ban"))], TOP)
     assert summary.ban_decisions == 2
     assert len(summary.bans) == 1
@@ -111,7 +111,7 @@ def test_missing_source_is_grouped_as_unknown():
     del alert["source"]
     summary = summarize_alerts([alert], TOP)
     assert summary.alerts == 1
-    # Die Sammelposition zählt nicht als eigener Angreifer.
+    # The catch-all bucket does not count as an attacker of its own.
     assert summary.unique_sources == 0
     assert summary.top_sources[0] == {"ip": UNKNOWN, "alerts": 1}
 
@@ -142,8 +142,8 @@ def test_ban_record_carries_the_context():
 
 def test_first_cycle_fires_no_events():
     summary = summarize_alerts([make_alert(1), make_alert(2, ip="192.0.2.2")], TOP)
-    # Ohne bekannten Vorzustand darf nichts als neu gelten, sonst schüttet
-    # jeder Neustart 24 Stunden Bans auf einmal aus.
+    # Without a known previous state nothing may count as new, otherwise every
+    # restart dumps 24 hours of bans at once.
     assert new_bans(summary, None) == []
 
 
@@ -166,7 +166,7 @@ def test_alert_id_falls_back_to_fingerprint():
     identifier = alert_id(alert)
     assert identifier is not None
     assert identifier.startswith("fp:")
-    # Derselbe Alert ergibt dieselbe Kennung — sonst wäre jeder Zyklus „neu".
+    # The same alert yields the same identifier — otherwise every cycle would be "new".
     assert identifier == alert_id(dict(alert))
 
 
@@ -176,7 +176,7 @@ def test_alert_id_none_without_any_marker():
 
 def test_parse_timestamp_handles_offsets_and_garbage():
     assert parse_timestamp("2026-08-13T10:00:00+02:00").hour == 8
-    assert parse_timestamp("keine Zeit") is None
+    assert parse_timestamp("not a time") is None
     assert parse_timestamp(None) is None
 
 
