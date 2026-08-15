@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import hmac
 import json
 import logging
+from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
 from typing import Any, NamedTuple
 
@@ -68,9 +70,18 @@ class AlertResult(NamedTuple):
     truncated: bool
 
 
-def _fingerprint(secret: str) -> str:
-    """Truncated SHA-256 of a secret, to compare expected and actual in the log."""
-    return hashlib.sha256(secret.encode("utf-8")).hexdigest()[:8]
+def _fingerprint(secret: str, salt: str) -> str:
+    """Short fingerprint of a secret, to compare expected and actual in the log.
+
+    Keyed with the machine ID rather than a plain hash: a plain SHA-256 of a
+    short password can simply be looked up, and a debug log is not the place to
+    hand out something that recovers the password. Keyed with a value that
+    differs per installation, the digest is only comparable against another
+    digest from the same installation — which is exactly what it is for.
+    """
+    return hmac.new(
+        salt.encode("utf-8"), secret.encode("utf-8"), hashlib.sha256
+    ).hexdigest()[:8]
 
 
 def _deleted_count(data: Any) -> int:
@@ -209,11 +220,12 @@ class CrowdSecClient:
                     # not reversible.
                     _LOGGER.debug(
                         "LAPI login to %s for machine_id %r "
-                        "(password: %d characters, sha256 %s): HTTP %s, %d byte response",
+                        "(password: %d characters, fingerprint %s): "
+                        "HTTP %s, %d byte response",
                         url,
                         self._machine_id,
                         len(self._machine_password),
-                        _fingerprint(self._machine_password),
+                        _fingerprint(self._machine_password, self._machine_id),
                         response.status,
                         len(body),
                     )
@@ -442,19 +454,28 @@ class CrowdSecClient:
         )
         return _deleted_count(data)
 
-    async def async_get_decisions(self) -> list[dict[str, Any]] | None:
-        """All active decisions, the way ``cscli decisions list`` sees them.
+    async def async_get_decisions(
+        self, origins: Sequence[str] | None = None
+    ) -> list[dict[str, Any]] | None:
+        """Active decisions, the way ``cscli decisions list`` sees them.
 
         The machine token is asked first — it is always configured, whereas the
         bouncer key is optional. Only if the LAPI denies the route to a machine
         does the bouncer key take over. ``None`` means neither path works; the
         caller then falls back to the ``cs_active_decisions`` metric, which
         knows the count but no details.
+
+        ``origins`` restricts the query server-side. That matters: an instance
+        subscribed to a blocklist enforces hundreds of thousands of decisions,
+        and transferring all of them once a minute costs far more than the
+        handful the card can actually act on.
         """
+        params = {"origins": ",".join(origins)} if origins else None
         try:
             data = await self._async_lapi_request(
                 "GET",
                 "/v1/decisions",
+                params,
                 endpoint=ENDPOINT_DECISIONS,
                 none_on_404=True,
             )
@@ -464,7 +485,7 @@ class CrowdSecClient:
                     "LAPI denies /v1/decisions to the machine token — using "
                     "the bouncer key instead"
                 )
-                return await self._async_bouncer_decisions()
+                return await self._async_bouncer_decisions(origins)
             # A valid token that is refused on this one route says something
             # about the CrowdSec version, not about the credentials. Treating
             # it as an outage would mark the whole instance unreachable over a
@@ -480,18 +501,21 @@ class CrowdSecClient:
             # 404: some builds only serve the route to bouncers.
             if self._bouncer_api_key is None:
                 return None
-            return await self._async_bouncer_decisions()
+            return await self._async_bouncer_decisions(origins)
         if not isinstance(data, list):
             raise CrowdSecConnectionError("LAPI /v1/decisions did not return an array")
         return [item for item in data if isinstance(item, dict)]
 
-    async def _async_bouncer_decisions(self) -> list[dict[str, Any]] | None:
+    async def _async_bouncer_decisions(
+        self, origins: Sequence[str] | None = None
+    ) -> list[dict[str, Any]] | None:
         """The decision list via the bouncer API."""
         if self._bouncer_api_key is None:
             return None
         try:
             async with self._session.get(
                 f"{self._lapi_url}/v1/decisions",
+                params={"origins": ",".join(origins)} if origins else None,
                 headers={**self._headers, "X-Api-Key": self._bouncer_api_key},
                 ssl=self._ssl,
                 timeout=self._timeout,

@@ -50,11 +50,11 @@ def test_machine_token_is_asked_first():
     async def scenario():
         client = build_client(bouncer_api_key="key")
 
-        async def fake_request(method, path, *args, **kwargs):
-            calls.append((method, path))
+        async def fake_request(method, path, params=None, *args, **kwargs):
+            calls.append((method, path, params))
             return [DECISION]
 
-        async def fake_bouncer():
+        async def fake_bouncer(*args, **kwargs):
             raise AssertionError("the bouncer key must stay untouched here")
 
         client._async_lapi_request = fake_request  # type: ignore[assignment]
@@ -62,7 +62,7 @@ def test_machine_token_is_asked_first():
         return await client.async_get_decisions()
 
     assert run(scenario) == [DECISION]
-    assert calls == [("GET", "/v1/decisions")]
+    assert calls == [("GET", "/v1/decisions", None)]
 
 
 def test_a_404_falls_back_to_the_bouncer_key():
@@ -73,7 +73,7 @@ def test_a_404_falls_back_to_the_bouncer_key():
             # none_on_404 turns the 404 into None.
             return None
 
-        async def fake_bouncer():
+        async def fake_bouncer(*args, **kwargs):
             return [DECISION]
 
         client._async_lapi_request = fake_request  # type: ignore[assignment]
@@ -104,7 +104,7 @@ def test_a_denied_route_falls_back_to_the_bouncer_key():
         async def fake_request(*args, **kwargs):
             raise CrowdSecAuthError("denied", "decisions")
 
-        async def fake_bouncer():
+        async def fake_bouncer(*args, **kwargs):
             return [DECISION]
 
         client._async_lapi_request = fake_request  # type: ignore[assignment]
@@ -142,7 +142,7 @@ def test_a_rejected_bouncer_key_still_surfaces():
         async def fake_request(*args, **kwargs):
             return None
 
-        async def fake_bouncer():
+        async def fake_bouncer(*args, **kwargs):
             raise CrowdSecAuthError("rejected", ENDPOINT_BOUNCER)
 
         client._async_lapi_request = fake_request  # type: ignore[assignment]
@@ -196,3 +196,46 @@ def test_deleted_count_reads_both_shapes():
     assert _deleted_count({"nbDeleted": None}) == 0
     assert _deleted_count({}) == 0
     assert _deleted_count(None) == 0
+
+
+# -- Restricting to origins -------------------------------------------------
+
+
+def test_origins_are_passed_to_the_lapi():
+    """The filter is what keeps a subscribed blocklist out of every cycle."""
+    calls: list[tuple] = []
+
+    async def scenario():
+        client = build_client()
+
+        async def fake_request(method, path, params=None, *args, **kwargs):
+            calls.append((method, path, params))
+            return [DECISION]
+
+        client._async_lapi_request = fake_request  # type: ignore[assignment]
+        return await client.async_get_decisions(("cscli", "crowdsec"))
+
+    assert run(scenario) == [DECISION]
+    assert calls == [("GET", "/v1/decisions", {"origins": "cscli,crowdsec"})]
+
+
+def test_origins_survive_the_fallback_to_the_bouncer_key():
+    """The fallback path must not quietly fetch everything again."""
+    seen: list = []
+
+    async def scenario():
+        client = build_client(bouncer_api_key="key")
+
+        async def fake_request(*args, **kwargs):
+            raise CrowdSecAuthError("denied", "decisions")
+
+        async def fake_bouncer(origins=None):
+            seen.append(origins)
+            return [DECISION]
+
+        client._async_lapi_request = fake_request  # type: ignore[assignment]
+        client._async_bouncer_decisions = fake_bouncer  # type: ignore[assignment]
+        return await client.async_get_decisions(("cscli",))
+
+    assert run(scenario) == [DECISION]
+    assert seen == [("cscli",)]

@@ -29,6 +29,12 @@ from .validation import normalize_ip_target
 
 _LOGGER = logging.getLogger(__name__)
 
+# How many rows one answer carries. The card asks for more when the user
+# scrolls; sending everything at once is what a WebSocket message should not be
+# doing for a table that can hold thousands of entries.
+DEFAULT_PAGE_SIZE = 500
+MAX_PAGE_SIZE = 2000
+
 
 @callback
 def async_register_websocket_api(hass: HomeAssistant) -> None:
@@ -101,6 +107,13 @@ def ws_instances(
         # Fetch fresh data instead of the last polling cycle. The card uses it
         # for its refresh button; the normal open costs no request at all.
         vol.Optional("refresh", default=False): bool,
+        # One page of the table. The rows are already sorted — active first,
+        # then by remaining time — so the first page is the interesting one and
+        # the card only fetches further pages when asked.
+        vol.Optional("limit", default=DEFAULT_PAGE_SIZE): vol.All(
+            int, vol.Range(min=1, max=MAX_PAGE_SIZE)
+        ),
+        vol.Optional("offset", default=0): vol.All(int, vol.Range(min=0)),
     }
 )
 @websocket_api.async_response
@@ -109,12 +122,15 @@ async def ws_decisions_list(
     connection: websocket_api.ActiveConnection,
     msg: dict[str, Any],
 ) -> None:
-    """The whole table: active decisions plus the 24h history."""
+    """One page of the table: active decisions plus the 24h history."""
     coordinator = _coordinator(hass, connection, msg)
     if coordinator is None:
         return
 
     if msg["refresh"]:
+        # A manual refresh should show the current picture, not whatever the
+        # incremental alert query happened to catch.
+        coordinator.request_full_alert_poll()
         await coordinator.async_request_refresh()
 
     data = coordinator.data
@@ -122,13 +138,23 @@ async def ws_decisions_list(
         connection.send_error(msg["id"], "not_ready", "No data fetched yet.")
         return
 
+    offset: int = msg["offset"]
+    limit: int = msg["limit"]
+    page = data.decisions[offset : offset + limit]
+
     connection.send_result(
         msg["id"],
         {
-            "decisions": [row.as_dict() for row in data.decisions],
+            "decisions": [row.as_dict() for row in page],
+            "total": len(data.decisions),
+            "offset": offset,
             "available": data.decisions_available,
             "reachable": data.reachable,
             "alerts_truncated": data.alerts_truncated,
+            # The table itself hit the row cap — there are more decisions than
+            # are being kept, never mind paged.
+            "decisions_truncated": data.decisions_truncated,
+            "local_only": data.decisions_local_only,
             "last_update": (data.last_update.isoformat() if data.last_update else None),
         },
     )
@@ -221,11 +247,16 @@ async def ws_decisions_delete(
     )
     await coordinator.async_request_refresh()
 
-    data = coordinator.data
+    # Only the first page comes back: after a delete the card redraws from the
+    # top anyway, and the answer must not be the one place that still ships the
+    # whole table.
+    rows = coordinator.data.decisions if coordinator.data else []
     connection.send_result(
         msg["id"],
         {
             "deleted": deleted,
-            "decisions": [row.as_dict() for row in data.decisions] if data else [],
+            "decisions": [row.as_dict() for row in rows[:DEFAULT_PAGE_SIZE]],
+            "total": len(rows),
+            "offset": 0,
         },
     )

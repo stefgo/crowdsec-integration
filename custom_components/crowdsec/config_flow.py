@@ -20,6 +20,9 @@ from homeassistant.helpers.selector import (
     NumberSelector,
     NumberSelectorConfig,
     NumberSelectorMode,
+    SelectSelector,
+    SelectSelectorConfig,
+    SelectSelectorMode,
     TextSelector,
     TextSelectorConfig,
     TextSelectorType,
@@ -34,16 +37,22 @@ from .api import (
     CrowdSecConnectionError,
 )
 from .const import (
+    CONF_ALERTS_FULL_INTERVAL,
     CONF_ALERTS_LIMIT,
     CONF_BOUNCER_API_KEY,
     CONF_BOUNCER_IDLE_INTERVALS,
+    CONF_DECISIONS_SCOPE,
     CONF_LAPI_URL,
     CONF_MACHINE_ID,
     CONF_MACHINE_PASSWORD,
     CONF_METRICS_URL,
     CONF_PARSE_ERROR_THRESHOLD,
+    DECISIONS_SCOPE_ALL,
+    DECISIONS_SCOPE_LOCAL,
+    DEFAULT_ALERTS_FULL_INTERVAL,
     DEFAULT_ALERTS_LIMIT,
     DEFAULT_BOUNCER_IDLE_INTERVALS,
+    DEFAULT_DECISIONS_SCOPE,
     DEFAULT_LAPI_PORT,
     DEFAULT_METRICS_PORT,
     DEFAULT_NAME,
@@ -75,6 +84,23 @@ TIMEOUT_SELECTOR = NumberSelector(
 # including their decisions.
 ALERTS_LIMIT_SELECTOR = NumberSelector(
     NumberSelectorConfig(min=100, max=10000, step=1, mode=NumberSelectorMode.BOX)
+)
+
+# How often the whole 24h window is refetched. In between only the minutes
+# since the last cycle are queried, so this is the knob for how much the
+# instance is asked for, not for how quickly a new ban is noticed.
+ALERTS_FULL_INTERVAL_SELECTOR = NumberSelector(
+    NumberSelectorConfig(
+        min=60, max=3600, step=30, mode=NumberSelectorMode.BOX, unit_of_measurement="s"
+    )
+)
+
+DECISIONS_SCOPE_SELECTOR = SelectSelector(
+    SelectSelectorConfig(
+        options=[DECISIONS_SCOPE_LOCAL, DECISIONS_SCOPE_ALL],
+        mode=SelectSelectorMode.DROPDOWN,
+        translation_key=CONF_DECISIONS_SCOPE,
+    )
 )
 
 STEP_USER_SCHEMA = vol.Schema(
@@ -243,10 +269,19 @@ class CrowdSecOptionsFlow(OptionsFlow):
             )
             user_input[CONF_TIMEOUT] = int(user_input[CONF_TIMEOUT])
             user_input[CONF_ALERTS_LIMIT] = int(user_input[CONF_ALERTS_LIMIT])
+            user_input[CONF_ALERTS_FULL_INTERVAL] = int(
+                user_input[CONF_ALERTS_FULL_INTERVAL]
+            )
+            scan_interval = int(user_input[CONF_SCAN_INTERVAL])
             # An update cycle makes several requests. If a single one already
             # reaches into the next interval, the cycles overtake each other.
-            if user_input[CONF_TIMEOUT] >= int(user_input[CONF_SCAN_INTERVAL]):
+            if user_input[CONF_TIMEOUT] >= scan_interval:
                 errors[CONF_TIMEOUT] = "timeout_too_long"
+            elif user_input[CONF_ALERTS_FULL_INTERVAL] < scan_interval:
+                # Below the poll interval the setting has no effect: every
+                # cycle would be a full query, which is what it is there to
+                # avoid.
+                errors[CONF_ALERTS_FULL_INTERVAL] = "full_interval_too_short"
             else:
                 return self.async_create_entry(title="", data=user_input)
             options = user_input
@@ -277,6 +312,16 @@ class CrowdSecOptionsFlow(OptionsFlow):
                     CONF_ALERTS_LIMIT,
                     default=options.get(CONF_ALERTS_LIMIT, DEFAULT_ALERTS_LIMIT),
                 ): ALERTS_LIMIT_SELECTOR,
+                vol.Required(
+                    CONF_ALERTS_FULL_INTERVAL,
+                    default=options.get(
+                        CONF_ALERTS_FULL_INTERVAL, DEFAULT_ALERTS_FULL_INTERVAL
+                    ),
+                ): ALERTS_FULL_INTERVAL_SELECTOR,
+                vol.Required(
+                    CONF_DECISIONS_SCOPE,
+                    default=options.get(CONF_DECISIONS_SCOPE, DEFAULT_DECISIONS_SCOPE),
+                ): DECISIONS_SCOPE_SELECTOR,
             }
         )
         return self.async_show_form(step_id="init", data_schema=schema, errors=errors)

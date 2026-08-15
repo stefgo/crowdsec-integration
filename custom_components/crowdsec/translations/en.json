@@ -52,16 +52,29 @@
           "timeout": "Request timeout (seconds)",
           "parse_error_threshold": "Parse error threshold (%)",
           "bouncer_idle_intervals": "Intervals without bouncer queries before a problem",
-          "alerts_limit": "Alerts per query (24h)"
+          "alerts_limit": "Alerts per query (24h)",
+          "alerts_full_interval": "Full alert refresh (seconds)",
+          "decisions_scope": "Decisions in the card"
         },
         "data_description": {
           "timeout": "Must be lower than the polling interval. Raise it if the instance is reached over VPN or a slow proxy.",
-          "alerts_limit": "Size of a single alert query. If it is hit, the time window is split and queried again, so the 24h numbers stay complete. Very high values slow down every cycle."
+          "alerts_limit": "Size of a single alert query. If it is hit, the time window is split and queried again, so the 24h numbers stay complete. Very high values slow down every cycle.",
+          "alerts_full_interval": "How often the whole 24h window is refetched. In between, every cycle only asks for the minutes since the last one, so a new ban is still noticed immediately — this only controls how much load the instance sees.",
+          "decisions_scope": "\"Local only\" fetches just the decisions made on this instance — exactly the ones the card can lift. A subscribed blocklist can hold hundreds of thousands of entries, and fetching those every cycle costs a lot for rows nobody can act on. The \"Active decisions\" sensor keeps counting all of them either way."
         }
       }
     },
     "error": {
-      "timeout_too_long": "The timeout must be lower than the polling interval, otherwise polling cycles overlap."
+      "timeout_too_long": "The timeout must be lower than the polling interval, otherwise polling cycles overlap.",
+      "full_interval_too_short": "The full alert refresh must not be shorter than the polling interval — every cycle would be a full query."
+    }
+  },
+  "selector": {
+    "decisions_scope": {
+      "options": {
+        "local": "Local only (recommended)",
+        "all": "All, including CAPI and blocklists"
+      }
     }
   },
   "issues": {

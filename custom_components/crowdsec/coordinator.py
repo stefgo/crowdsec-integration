@@ -17,7 +17,13 @@ from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
-from .alerts import AlertSummary, new_bans, partition_bans, summarize_alerts
+from .alerts import (
+    AlertCache,
+    AlertSummary,
+    new_bans,
+    partition_bans,
+    summarize_alerts,
+)
 from .api import (
     ENDPOINT_LAPI,
     AlertResult,
@@ -26,21 +32,30 @@ from .api import (
     CrowdSecConnectionError,
 )
 from .const import (
+    ALERTS_INCREMENT_OVERLAP_MINUTES,
+    ALERTS_SINCE,
+    CONF_ALERTS_FULL_INTERVAL,
     CONF_ALERTS_LIMIT,
     CONF_BOUNCER_IDLE_INTERVALS,
+    CONF_DECISIONS_SCOPE,
     CONF_PARSE_ERROR_THRESHOLD,
     COUNTER_BOUNCER,
     COUNTER_LINES,
     COUNTER_PARSE_KO,
     COUNTER_PARSE_OK,
     DECISION_STATUS_ACTIVE,
+    DECISIONS_SCOPE_LOCAL,
+    DEFAULT_ALERTS_FULL_INTERVAL,
     DEFAULT_ALERTS_LIMIT,
     DEFAULT_BOUNCER_IDLE_INTERVALS,
+    DEFAULT_DECISIONS_SCOPE,
     DEFAULT_PARSE_ERROR_THRESHOLD,
     DEFAULT_SCAN_INTERVAL,
     DOMAIN,
     EVENT_NEW_BAN,
     ISSUE_ALERTS_TRUNCATED,
+    LOCAL_ORIGINS,
+    MAX_DECISION_ROWS,
     METRIC_ACTIVE_DECISIONS,
     METRIC_BUCKETS,
     METRIC_INFO,
@@ -58,6 +73,7 @@ from .const import (
 from .decisions import DecisionRecord, build_table
 from .metrics import MetricSet, Sample
 from .rates import RateTracker, error_ratio
+from .timewindow import parse_duration
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -94,6 +110,13 @@ class CrowdSecData:
     # Whether the decision list itself could be read. Without it the card only
     # has the history and has to say so.
     decisions_available: bool = False
+    # Set when the table hit MAX_DECISION_ROWS — the card says so rather than
+    # pretending the list it shows is the whole picture.
+    decisions_truncated: bool = False
+    # Whether only locally created decisions are being fetched. The card needs
+    # to know: with the CAPI and blocklists left out, the row count and the
+    # "active decisions" sensor deliberately disagree.
+    decisions_local_only: bool = False
 
     new_bans_24h: int | None = None
     alerts_24h: int | None = None
@@ -166,6 +189,36 @@ class CrowdSecCoordinator(DataUpdateCoordinator[CrowdSecData]):
             options.get(CONF_BOUNCER_IDLE_INTERVALS, DEFAULT_BOUNCER_IDLE_INTERVALS)
         )
         self._alerts_limit = int(options.get(CONF_ALERTS_LIMIT, DEFAULT_ALERTS_LIMIT))
+        self._alerts_full_interval = int(
+            options.get(CONF_ALERTS_FULL_INTERVAL, DEFAULT_ALERTS_FULL_INTERVAL)
+        )
+        self._decisions_scope = str(
+            options.get(CONF_DECISIONS_SCOPE, DEFAULT_DECISIONS_SCOPE)
+        )
+        # The rolling alert window. It is filled by a full query now and then
+        # and topped up every cycle; see AlertCache for why.
+        window = parse_duration(ALERTS_SINCE) or 24 * 60
+        self._alert_cache = AlertCache(timedelta(minutes=window))
+        self._alerts_full_at: float | None = None
+        self._alerts_polled_at: float | None = None
+        self._force_full_alerts = False
+        self._alerts_truncated = False
+
+    @property
+    def decisions_origins(self) -> tuple[str, ...] | None:
+        """The origins the decision query is restricted to, if any."""
+        if self._decisions_scope == DECISIONS_SCOPE_LOCAL:
+            return LOCAL_ORIGINS
+        return None
+
+    def request_full_alert_poll(self) -> None:
+        """Make the next cycle fetch the whole alert window again.
+
+        A manual refresh should not hand back whatever the incremental query
+        happened to see — someone pressing the button wants the current
+        picture, not a partially aged one.
+        """
+        self._force_full_alerts = True
 
     # -- Update cycle -----------------------------------------------------
 
@@ -177,10 +230,11 @@ class CrowdSecCoordinator(DataUpdateCoordinator[CrowdSecData]):
         # The three queries do not depend on each other. Run one after another,
         # three timeouts add up in the worst case — in parallel the cycle stays
         # within a single one.
+        full_alerts = self._alerts_due_in_full(started)
         metrics_result, alerts_result, decisions_result = await asyncio.gather(
             self.client.async_get_metrics(),
-            self.client.async_get_alerts(limit=self._alerts_limit),
-            self.client.async_get_decisions(),
+            self._async_query_alerts(started, full_alerts),
+            self.client.async_get_decisions(self.decisions_origins),
             return_exceptions=True,
         )
 
@@ -199,12 +253,13 @@ class CrowdSecCoordinator(DataUpdateCoordinator[CrowdSecData]):
             self._rates.reset()
 
         if alerts is not None:
-            self._apply_alerts(data, alerts)
+            self._absorb_alerts(alerts, full_alerts, started)
+            self._apply_alerts(data)
 
         self._apply_decisions(
             data,
             raw_decisions,
-            alerts.alerts if alerts is not None else [],
+            self._alert_cache.alerts,
             previous,
         )
 
@@ -331,10 +386,56 @@ class CrowdSecCoordinator(DataUpdateCoordinator[CrowdSecData]):
             else error_ratio(parse_ok, parse_ko)
         )
 
-    def _apply_alerts(self, data: CrowdSecData, result: AlertResult) -> None:
-        summary = summarize_alerts(result.alerts, TOP_SCENARIO_COUNT)
+    # -- Alerts -----------------------------------------------------------
 
-        data.alerts_truncated = result.truncated
+    def _alerts_due_in_full(self, now: float) -> bool:
+        """Whether this cycle has to fetch the whole window again."""
+        if self._force_full_alerts or self._alerts_full_at is None:
+            return True
+        return now - self._alerts_full_at >= self._alerts_full_interval
+
+    async def _async_query_alerts(self, now: float, full: bool) -> AlertResult:
+        """One alert query — either the whole window or only what is new.
+
+        The incremental window is measured from the last *successful* query, so
+        a failed cycle does not tear a hole into the series: the next one
+        simply asks for a longer stretch.
+        """
+        if full or self._alerts_polled_at is None:
+            return await self.client.async_get_alerts(
+                since=ALERTS_SINCE, limit=self._alerts_limit
+            )
+
+        elapsed = max(0.0, now - self._alerts_polled_at)
+        minutes = int(elapsed // 60) + ALERTS_INCREMENT_OVERLAP_MINUTES
+        return await self.client.async_get_alerts(
+            since=f"{minutes}m", limit=self._alerts_limit
+        )
+
+    def _absorb_alerts(self, result: AlertResult, full: bool, now: float) -> None:
+        """Merge the result of a query into the rolling window."""
+        if full:
+            self._alert_cache.replace(result.alerts)
+            self._alerts_full_at = now
+            self._force_full_alerts = False
+            # A full query re-establishes the truth about completeness; an
+            # earlier incremental truncation is no longer relevant.
+            self._alerts_truncated = result.truncated
+        else:
+            self._alert_cache.add(result.alerts)
+            # A truncated increment means alerts were missed, and the cache
+            # cannot heal that by itself — the flag stays until the next full
+            # query proves otherwise.
+            self._alerts_truncated = self._alerts_truncated or result.truncated
+
+        self._alerts_polled_at = now
+        self._alert_cache.prune(datetime.now(UTC))
+
+    def _apply_alerts(self, data: CrowdSecData) -> None:
+        """Derive the 24h numbers from the rolling window."""
+        summary = summarize_alerts(self._alert_cache.alerts, TOP_SCENARIO_COUNT)
+
+        data.alerts_truncated = self._alerts_truncated
         data.alerts_24h = summary.alerts
         data.new_bans_24h = summary.ban_decisions
         data.unique_attackers_24h = summary.unique_sources
@@ -353,7 +454,7 @@ class CrowdSecCoordinator(DataUpdateCoordinator[CrowdSecData]):
         # ``new_bans`` would filter them out for good and their event would
         # never be fired.
         self._known_alert_ids = summary.seen_ids - deferred
-        self._report_truncation(result.truncated)
+        self._report_truncation(self._alerts_truncated)
 
     def _apply_decisions(
         self,
@@ -364,22 +465,44 @@ class CrowdSecCoordinator(DataUpdateCoordinator[CrowdSecData]):
     ) -> None:
         """Build the table for the card and the exact decision count.
 
-        The count from the list beats the ``cs_active_decisions`` metric: the
-        metric is a gauge that CrowdSec only refreshes now and then, whereas
-        the list is what the LAPI is enforcing at this moment.
+        With the full list in hand its count beats the ``cs_active_decisions``
+        metric: the metric is a gauge that CrowdSec only refreshes now and
+        then, whereas the list is what the LAPI is enforcing at this moment.
+
+        Restricted to local origins that no longer holds — the CAPI and the
+        blocklists are missing from the list by design — so the metric keeps
+        the sensor and the table only describes what the card can act on.
         """
+        local_only = self.decisions_origins is not None
+        data.decisions_local_only = local_only
+
         if raw_decisions is None:
             data.decisions_available = False
             # A failed decision query must not empty the table — the card would
             # then show "no bans" for an instance that is merely unreachable.
             data.decisions = previous.decisions if previous else []
+            data.decisions_truncated = (
+                previous.decisions_truncated if previous else False
+            )
             return
 
         data.decisions_available = True
-        data.decisions = build_table(raw_decisions, alerts)
-        data.active_decisions = sum(
-            1 for row in data.decisions if row.status == DECISION_STATUS_ACTIVE
-        )
+        rows = build_table(raw_decisions, alerts)
+        data.decisions_truncated = len(rows) > MAX_DECISION_ROWS
+        if data.decisions_truncated:
+            _LOGGER.debug(
+                "Decision table has %d rows, showing the first %d",
+                len(rows),
+                MAX_DECISION_ROWS,
+            )
+        # build_table sorts active first and by remaining time, so the cut
+        # takes away the rows furthest in the past, not a random selection.
+        data.decisions = rows[:MAX_DECISION_ROWS]
+
+        if not local_only:
+            data.active_decisions = sum(
+                1 for row in rows if row.status == DECISION_STATUS_ACTIVE
+            )
 
     def _fire_ban_events(self, summary: AlertSummary) -> set[str]:
         """Fire one event per newly detected ban.

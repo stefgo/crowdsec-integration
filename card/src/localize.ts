@@ -81,6 +81,8 @@ export const EN = {
     "The decision list could not be read; only the 24 h history is shown.",
   "notice.truncated":
     "More alerts than one query returns — the history is incomplete.",
+  "notice.rows_truncated":
+    "More decisions than the card keeps — showing the ones expiring last.",
   "notice.removed": "Removed {count} decision(s).",
   "notice.removed_none":
     "CrowdSec removed nothing — the decision was already gone.",
@@ -195,6 +197,8 @@ const DE: Partial<Record<TranslationKey, string>> = {
     "Die Entscheidungsliste konnte nicht gelesen werden; gezeigt wird nur die 24-h-Historie.",
   "notice.truncated":
     "Mehr Alarme, als eine Abfrage liefert — die Historie ist unvollständig.",
+  "notice.rows_truncated":
+    "Mehr Entscheidungen, als die Card vorhält — gezeigt werden die zuletzt ablaufenden.",
   "notice.removed": "{count} Entscheidung(en) entfernt.",
   "notice.removed_none":
     "CrowdSec hat nichts entfernt — die Entscheidung war bereits weg.",

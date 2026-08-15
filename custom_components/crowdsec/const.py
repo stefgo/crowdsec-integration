@@ -41,6 +41,8 @@ CONF_BOUNCER_API_KEY = "bouncer_api_key"
 CONF_PARSE_ERROR_THRESHOLD = "parse_error_threshold"
 CONF_BOUNCER_IDLE_INTERVALS = "bouncer_idle_intervals"
 CONF_ALERTS_LIMIT = "alerts_limit"
+CONF_ALERTS_FULL_INTERVAL = "alerts_full_interval"
+CONF_DECISIONS_SCOPE = "decisions_scope"
 
 # --- Defaults -------------------------------------------------------------
 DEFAULT_NAME = "CrowdSec"
@@ -53,6 +55,16 @@ DEFAULT_BOUNCER_IDLE_INTERVALS = 5
 
 # Time window for the 24h evaluation via the LAPI.
 ALERTS_SINCE = "24h"
+# How often the *whole* window is fetched. In between, every cycle only asks
+# for the minutes since the last query and merges the result into the cache —
+# see ``AlertCache``. Refetching 24 hours once a minute transfers the same
+# alert objects over and over, and with the window splitting behind it that is
+# up to 16 requests per cycle.
+DEFAULT_ALERTS_FULL_INTERVAL = 300
+# An incremental query covers a little more than the elapsed time: alerts that
+# arrive while the request is in flight would otherwise fall between two
+# windows.
+ALERTS_INCREMENT_OVERLAP_MINUTES = 2
 # Upper limit of *a single* alert query. If it is hit, the client splits the
 # time window and queries again — so the value is no longer a hard ceiling but
 # the size of one partial query.
@@ -89,6 +101,21 @@ REMOTE_ORIGINS = frozenset({"capi", "lists", "list"})
 ORIGIN_KIND_LOCAL = "local"
 ORIGIN_KIND_CAPI = "capi"
 ORIGIN_KIND_LISTS = "lists"
+
+# The origins CrowdSec uses for decisions made on the instance itself. The LAPI
+# takes them as an ``origins`` filter, which is what keeps a subscribed
+# blocklist with a few hundred thousand addresses out of every update cycle.
+LOCAL_ORIGINS = ("crowdsec", "cscli", "console", "cscli-import")
+
+# Which decisions end up in the card's table.
+DECISIONS_SCOPE_LOCAL = "local"
+DECISIONS_SCOPE_ALL = "all"
+DEFAULT_DECISIONS_SCOPE = DECISIONS_SCOPE_LOCAL
+
+# Upper bound on the rows of the table. A browser is not going to render a
+# hundred thousand rows usefully, and the whole list travels through the
+# WebSocket connection.
+MAX_DECISION_ROWS = 2000
 
 DECISION_STATUS_ACTIVE = "active"
 DECISION_STATUS_EXPIRED = "expired"

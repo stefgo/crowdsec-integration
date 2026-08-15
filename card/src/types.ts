@@ -29,10 +29,17 @@ export interface Decision {
 
 export interface DecisionsResponse {
   decisions: Decision[];
+  /** Rows in the whole table, not just in this page. */
+  total: number;
+  offset: number;
   /** False when the decision route itself could not be read. */
   available: boolean;
   reachable: boolean;
   alerts_truncated: boolean;
+  /** The table hit the integration's row cap — there are more decisions. */
+  decisions_truncated: boolean;
+  /** Only locally created decisions are fetched; CAPI and blocklists are out. */
+  local_only: boolean;
   last_update: string | null;
 }
 

@@ -11,7 +11,12 @@ import { LitElement, PropertyValues, css, html, nothing } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
 
 import "./editor";
-import { deleteDecision, deleteForIp, fetchDecisions, fetchInstances } from "./api";
+import {
+  deleteDecision,
+  deleteForIp,
+  fetchAllDecisions,
+  fetchInstances,
+} from "./api";
 import {
   Counts,
   FilterState,
@@ -151,16 +156,18 @@ export class CrowdSecBansCard extends LitElement {
     this._error = null;
     try {
       const t = this._t;
-      const result = await fetchDecisions(this.hass, this._entryId, refresh);
+      const result = await fetchAllDecisions(this.hass, this._entryId, refresh);
       this._decisions = result.decisions;
       this._lastUpdate = result.last_update;
       this._notice = !result.reachable
         ? t("notice.unreachable")
         : !result.available
           ? t("notice.unavailable")
-          : result.alerts_truncated
-            ? t("notice.truncated")
-            : null;
+          : result.decisions_truncated
+            ? t("notice.rows_truncated")
+            : result.alerts_truncated
+              ? t("notice.truncated")
+              : null;
     } catch (err) {
       this._error = this._message(err);
     } finally {
@@ -266,11 +273,17 @@ export class CrowdSecBansCard extends LitElement {
         allForIp || decision.id === null
           ? await deleteForIp(this.hass, this._entryId, decision.value ?? "")
           : await deleteDecision(this.hass, this._entryId, decision.id);
-      this._decisions = result.decisions;
       this._notice =
         result.deleted > 0
           ? t("notice.removed", { count: result.deleted })
           : t("notice.removed_none");
+      // The answer only carries the first page; the rest is fetched the same
+      // way as on open, so a large table stays consistent after a delete.
+      if (result.total > result.decisions.length) {
+        await this._load();
+      } else {
+        this._decisions = result.decisions;
+      }
     } catch (err) {
       this._error = this._message(err);
     } finally {
