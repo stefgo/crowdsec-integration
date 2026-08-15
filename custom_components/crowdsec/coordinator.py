@@ -39,6 +39,7 @@ from .const import (
     DEFAULT_SCAN_INTERVAL,
     DOMAIN,
     EVENT_NEW_BAN,
+    DECISION_STATUS_ACTIVE,
     ISSUE_ALERTS_TRUNCATED,
     METRIC_ACTIVE_DECISIONS,
     METRIC_BUCKETS,
@@ -54,6 +55,7 @@ from .const import (
     METRIC_READER_HITS,
     TOP_SCENARIO_COUNT,
 )
+from .decisions import DecisionRecord, build_table
 from .metrics import MetricSet, Sample
 from .rates import RateTracker, error_ratio
 
@@ -85,6 +87,13 @@ class CrowdSecData:
     active_decisions: int | None = None
     decisions_by_reason: dict[str, float] = field(default_factory=dict)
     decisions_by_action: dict[str, float] = field(default_factory=dict)
+
+    # The table behind the Lovelace card: active decisions enriched with the
+    # alert details, plus the expired bans of the last 24 hours.
+    decisions: list[DecisionRecord] = field(default_factory=list)
+    # Whether the decision list itself could be read. Without it the card only
+    # has the history and has to say so.
+    decisions_available: bool = False
 
     new_bans_24h: int | None = None
     alerts_24h: int | None = None
@@ -171,13 +180,13 @@ class CrowdSecCoordinator(DataUpdateCoordinator[CrowdSecData]):
         metrics_result, alerts_result, decisions_result = await asyncio.gather(
             self.client.async_get_metrics(),
             self.client.async_get_alerts(limit=self._alerts_limit),
-            self.client.async_get_active_decision_count(),
+            self.client.async_get_decisions(),
             return_exceptions=True,
         )
 
         metrics = self._unwrap(data, metrics_result, MetricSet)
         alerts = self._unwrap(data, alerts_result, AlertResult)
-        decision_count = self._unwrap(data, decisions_result, int)
+        raw_decisions = self._unwrap(data, decisions_result, list)
 
         data.scrape_duration = round(monotonic() - started, 3)
         data.reachable = not data.errors
@@ -192,8 +201,12 @@ class CrowdSecCoordinator(DataUpdateCoordinator[CrowdSecData]):
         if alerts is not None:
             self._apply_alerts(data, alerts)
 
-        if decision_count is not None:
-            data.active_decisions = decision_count
+        self._apply_decisions(
+            data,
+            raw_decisions,
+            alerts.alerts if alerts is not None else [],
+            previous,
+        )
 
         now = datetime.now(timezone.utc)
         if data.reachable:
@@ -341,6 +354,32 @@ class CrowdSecCoordinator(DataUpdateCoordinator[CrowdSecData]):
         # never be fired.
         self._known_alert_ids = summary.seen_ids - deferred
         self._report_truncation(result.truncated)
+
+    def _apply_decisions(
+        self,
+        data: CrowdSecData,
+        raw_decisions: list[Any] | None,
+        alerts: list[dict[str, Any]],
+        previous: CrowdSecData | None,
+    ) -> None:
+        """Build the table for the card and the exact decision count.
+
+        The count from the list beats the ``cs_active_decisions`` metric: the
+        metric is a gauge that CrowdSec only refreshes now and then, whereas
+        the list is what the LAPI is enforcing at this moment.
+        """
+        if raw_decisions is None:
+            data.decisions_available = False
+            # A failed decision query must not empty the table — the card would
+            # then show "no bans" for an instance that is merely unreachable.
+            data.decisions = previous.decisions if previous else []
+            return
+
+        data.decisions_available = True
+        data.decisions = build_table(raw_decisions, alerts)
+        data.active_decisions = sum(
+            1 for row in data.decisions if row.status == DECISION_STATUS_ACTIVE
+        )
 
     def _fire_ban_events(self, summary: AlertSummary) -> set[str]:
         """Fire one event per newly detected ban.

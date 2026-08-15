@@ -87,6 +87,61 @@ automation:
             because of {{ trigger.event.data.scenario }}
 ```
 
+## Lovelace card: bans with search, filters and unban
+
+The integration ships a card that shows every decision CrowdSec is currently
+enforcing, together with the bans of the last 24 hours that have already run
+out. It is served by the integration itself — no Lovelace resource has to be
+added by hand. After the update it appears in the card picker as **CrowdSec
+Bans** (`custom:crowdsec-bans-card`).
+
+| Column | Source |
+| --- | --- |
+| Address | `value` of the decision, IP or CIDR range |
+| Type | `ban`, `captcha`, … |
+| Scenario | the scenario, namespace stripped; manual bans as `manual: <reason>` |
+| Country / AS | from the alert belonging to the address |
+| Origin | `local` (deletable), `CAPI` or `blocklist` |
+| Remaining | derived from `duration`, or from `until` where the LAPI sends it |
+
+The card opens on **active** decisions of **local** origin — that is what this
+Home Assistant owns and can act on. The CAPI and the blocklists contribute
+thousands of rows that can neither be removed nor read usefully; they are one
+chip away when you want them.
+
+Clicking a row opens the details — every raw field of the decision plus the
+alert context. The search box works over address, scenario, AS, country,
+origin, type and scope; several words all have to match but may sit in
+different fields, so `de ssh` finds the German SSH bruteforcers. The chips
+filter by status, origin, type and scope; column headers sort.
+
+The card speaks **German and English** and follows the language set in the
+Home Assistant profile; anything else falls back to English. Error messages
+from the integration are localised by their error code, so they also arrive in
+the user's language.
+
+**Unban** removes exactly the decision of that row. An address can carry
+several decisions — from different scenarios, or one local and one from the
+CAPI — and the detail panel additionally offers *Remove all decisions for this
+address*. Decisions from the CAPI or from a blocklist have no button: they are
+pushed centrally, and a local delete would be undone on the next pull.
+
+Only administrators can see the card and remove decisions.
+
+```yaml
+type: custom:crowdsec-bans-card
+title: CrowdSec
+status: active        # active (default) | expired | all
+origins: [local]      # default; also capi and lists
+sort: seconds_left
+page_size: 25
+hide_filters: false
+```
+
+Everything is optional; without `config_entry_id` the card takes the first
+configured instance and offers a picker if there are several. The same options
+are available in the visual editor.
+
 ## Push and badge on iOS/iPadOS
 
 A ready-made package for the Home Assistant companion app is available at
@@ -140,16 +195,19 @@ To adjust before use: the service name of the companion app in the notify group
    sudo cscli machines add homeassistant --password '<password>'
    ```
 
-   They are needed for `/v1/alerts` (New bans 24h, Top scenario).
+   They are needed for `/v1/alerts` (New bans 24h, Top scenario) and for
+   `/v1/decisions` — the list behind the card and the exact decision count.
 
-3. **Optional: a bouncer API key** for an exact decision count:
+3. **Optional: a bouncer API key**:
 
    ```bash
    sudo cscli bouncers add homeassistant
    ```
 
-   Without a key the `cs_active_decisions` metric is used — it counts decisions
-   including the lists pulled from the CAPI and therefore deviates slightly.
+   The machine credentials already cover the decision list. The key is only a
+   fallback for CrowdSec versions that serve `/v1/decisions` to bouncers alone;
+   if neither path works, the `cs_active_decisions` metric takes over, which
+   knows the count but no details and therefore leaves the card's table empty.
 
 ## Installation
 
@@ -232,8 +290,10 @@ curl -si -X POST http://<host>:8080/v1/watchers/login \
 ```
 
 If `/v1/decisions` answers with a **404**, that is not an error: not every
-CrowdSec version returns an empty array there. In that case the integration
-automatically falls back to `cs_active_decisions`.
+CrowdSec version returns an empty array there. The integration then tries the
+bouncer key and finally falls back to `cs_active_decisions`. Only in that last
+case does the card's table stay empty — the metric knows the count, not the
+decisions.
 
 If the LAPI reports `incorrect Username or Password` on login although the same
 credentials work via curl, it is worth looking at the user agent: CrowdSec
@@ -267,18 +327,37 @@ latest data and the raw `cs_*` metrics of the instance. Credentials and
 attacker IPs are replaced while the counts are preserved — so the report can be
 attached to an issue.
 
+## Building the card
+
+The card is written in TypeScript and is **not** committed in built form. HACS
+installs get it from the release zip; for a checkout it has to be built once:
+
+```bash
+npm --prefix card ci
+npm --prefix card run build   # writes custom_components/crowdsec/www/
+```
+
+Without that file the integration starts normally and only logs a warning —
+everything except the card works.
+
 ## Tests
 
 ```bash
 pip install -r requirements_test.txt
 python -m pytest
+
+npm --prefix card test
 ```
 
 Covered are the parts without a Home Assistant dependency, which are at the
 same time the most error-prone ones: the Prometheus parser, the rate and
-restart logic, the alert evaluation including ban detection, the splitting of
-the time windows as well as the consistency of manifest, `strings.json` and the
-translations. CI additionally runs `hassfest` and the HACS validation (see
+restart logic, the alert evaluation including ban detection, the normalisation
+and enrichment of the decisions, the splitting of the time windows as well as
+the consistency of manifest, `strings.json` and the translations. On the card
+side the search, filter and sort logic is tested with vitest, together with the
+card's own translations — German and English have to carry the same keys and
+the same placeholders. CI additionally runs `hassfest` and the HACS validation
+(see
 [.github/workflows/validate.yml](.github/workflows/validate.yml)).
 
 ## License

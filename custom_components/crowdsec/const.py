@@ -80,6 +80,29 @@ DEFAULT_BAN_REASON = "Home Assistant"
 # show them as their own source in `cscli decisions list`.
 DECISION_ORIGIN = "cscli"
 
+# --- Decisions and the card ----------------------------------------------
+# Origins pushed by the central API. Deleting such a decision locally is
+# pointless — the next pull brings it back — so the card offers no unban for
+# them. Everything else (crowdsec, cscli, console, cscli-import, …) is local.
+REMOTE_ORIGINS = frozenset({"capi", "lists", "list"})
+
+ORIGIN_KIND_LOCAL = "local"
+ORIGIN_KIND_CAPI = "capi"
+ORIGIN_KIND_LISTS = "lists"
+
+DECISION_STATUS_ACTIVE = "active"
+DECISION_STATUS_EXPIRED = "expired"
+
+# The card is served by the integration itself, so no Lovelace resource has to
+# be maintained by hand.
+CARD_FILENAME = "crowdsec-bans-card.js"
+CARD_URL_PATH = f"/{DOMAIN}_static"
+
+# WebSocket commands behind the card.
+WS_DECISIONS_LIST = f"{DOMAIN}/decisions/list"
+WS_DECISIONS_DELETE = f"{DOMAIN}/decisions/delete"
+WS_INSTANCES = f"{DOMAIN}/instances"
+
 # --- Repair issues --------------------------------------------------------
 ISSUE_ALERTS_TRUNCATED = "alerts_truncated"
 

@@ -1,3 +1,7 @@
+node_modules/
+# Build target of the card — the integration serves it from there, and the
+# release workflow puts it into the zip.
+custom_components/crowdsec/www/
 __pycache__/
 *.py[cod]
 .pytest_cache/
@@ -6,3 +10,6 @@ venv/
 .coverage
 htmlcov/
 .DS_Store
+
+# Contains the target host and paths of a private instance — stays local.
+builddeploy.sh

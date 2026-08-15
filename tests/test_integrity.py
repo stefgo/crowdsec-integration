@@ -106,3 +106,27 @@ def test_services_are_documented():
         const.SERVICE_REFRESH,
     }
     assert declared == set(STRINGS["services"])
+
+
+def test_card_constants_match_the_build():
+    """The card is only served if the build writes it where const expects it."""
+    rollup = (COMPONENT.parents[1] / "card" / "rollup.config.js").read_text(
+        encoding="utf-8"
+    )
+    assert const.CARD_FILENAME in rollup
+    assert f"custom_components/{const.DOMAIN}/www" in rollup
+
+
+def test_the_manifest_declares_what_the_card_needs():
+    """Static path, frontend registration and WebSocket commands are HA parts."""
+    assert set(MANIFEST["dependencies"]) >= {"http", "frontend", "websocket_api"}
+
+
+def test_websocket_commands_are_namespaced():
+    """Command names have to start with the domain, or HA rejects them."""
+    for command in (
+        const.WS_INSTANCES,
+        const.WS_DECISIONS_LIST,
+        const.WS_DECISIONS_DELETE,
+    ):
+        assert command.startswith(f"{const.DOMAIN}/")

@@ -25,6 +25,24 @@ def _redact_addresses(data: dict[str, Any]) -> None:
     if data.get("top_attacker") is not None:
         data["top_attacker"] = "**REDACTED**"
 
+    # The decision table is the one place where every banned address is listed
+    # in full. What a support request needs is the shape of the rows, not who
+    # is in them — so the addresses go and everything else stays.
+    if isinstance(data.get("decisions"), list):
+        data["decisions"] = [
+            {
+                **{
+                    key: value
+                    for key, value in entry.items()
+                    if key not in ("value", "as_name", "as_number")
+                },
+                "value": "**REDACTED**",
+            }
+            if isinstance(entry, dict)
+            else entry
+            for entry in data["decisions"]
+        ]
+
 
 async def async_get_config_entry_diagnostics(
     hass: HomeAssistant, entry: CrowdSecConfigEntry

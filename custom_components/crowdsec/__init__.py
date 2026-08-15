@@ -3,13 +3,18 @@
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 
+from homeassistant.components.frontend import add_extra_js_url
+from homeassistant.components.http import StaticPathConfig
 from homeassistant.const import CONF_TIMEOUT, CONF_VERIFY_SSL, Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .api import CrowdSecClient
 from .const import (
+    CARD_FILENAME,
+    CARD_URL_PATH,
     CONF_BOUNCER_API_KEY,
     CONF_LAPI_URL,
     CONF_MACHINE_ID,
@@ -17,13 +22,19 @@ from .const import (
     CONF_METRICS_URL,
     DEFAULT_TIMEOUT,
     DOMAIN,
+    INTEGRATION_VERSION,
 )
 from .coordinator import CrowdSecConfigEntry, CrowdSecCoordinator
 from .services import async_setup_services, async_unload_services
+from .websocket_api import async_register_websocket_api
 
 _LOGGER = logging.getLogger(__name__)
 
 PLATFORMS: list[Platform] = [Platform.BINARY_SENSOR, Platform.SENSOR]
+
+# The card is registered once per Home Assistant run, not once per instance —
+# a second registration of the same static path raises.
+CARD_REGISTERED = f"{DOMAIN}_card_registered"
 
 
 def build_client(
@@ -82,7 +93,37 @@ async def async_setup_entry(hass: HomeAssistant, entry: CrowdSecConfigEntry) -> 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     entry.async_on_unload(entry.add_update_listener(async_reload_entry))
     async_setup_services(hass)
+    async_register_websocket_api(hass)
+    await _async_register_card(hass)
     return True
+
+
+async def _async_register_card(hass: HomeAssistant) -> None:
+    """Serve the Lovelace card and register it with the frontend.
+
+    This removes the need to maintain a Lovelace resource by hand; if the build
+    is missing (a checkout without ``npm run build``), nothing happens at all.
+    """
+    if hass.data.get(CARD_REGISTERED):
+        return
+
+    www_dir = Path(__file__).parent / "www"
+    card_file = www_dir / CARD_FILENAME
+    if not await hass.async_add_executor_job(card_file.is_file):
+        _LOGGER.warning(
+            "Card %s not found — please run 'npm run build' in the card/ "
+            "directory and deploy again",
+            card_file,
+        )
+        return
+
+    hass.data[CARD_REGISTERED] = True
+    await hass.http.async_register_static_paths(
+        [StaticPathConfig(CARD_URL_PATH, str(www_dir), False)]
+    )
+    # Version in the query string: otherwise the browser keeps holding on to
+    # the old card after an update.
+    add_extra_js_url(hass, f"{CARD_URL_PATH}/{CARD_FILENAME}?v={INTEGRATION_VERSION}")
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: CrowdSecConfigEntry) -> bool:

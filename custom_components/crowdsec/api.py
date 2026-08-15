@@ -38,6 +38,7 @@ ENDPOINT_METRICS = "metrics"
 ENDPOINT_LAPI = "lapi"
 ENDPOINT_ALERTS = "alerts"
 ENDPOINT_BOUNCER = "bouncer"
+ENDPOINT_DECISIONS = "decisions"
 
 
 class CrowdSecError(Exception):
@@ -70,6 +71,20 @@ class AlertResult(NamedTuple):
 def _fingerprint(secret: str) -> str:
     """Truncated SHA-256 of a secret, to compare expected and actual in the log."""
     return hashlib.sha256(secret.encode("utf-8")).hexdigest()[:8]
+
+
+def _deleted_count(data: Any) -> int:
+    """Read ``nbDeleted`` from a delete response.
+
+    CrowdSec answers with the count as a string in some versions and as a
+    number in others; both mean the same thing.
+    """
+    if not isinstance(data, dict):
+        return 0
+    try:
+        return int(data.get("nbDeleted"))
+    except (TypeError, ValueError):
+        return 0
 
 
 def _parse_expiry(raw: Any) -> datetime | None:
@@ -244,8 +259,17 @@ class CrowdSecClient:
         path: str,
         params: dict[str, str] | None = None,
         payload: Any = None,
+        endpoint: str = ENDPOINT_ALERTS,
+        none_on_404: bool = False,
     ) -> Any:
-        """Request to the LAPI with machine auth, retried once on a 401."""
+        """Request to the LAPI with machine auth, retried once on a 401.
+
+        ``endpoint`` names the access path in an auth error — the coordinator
+        decides per path whether the outage blocks the entry. With
+        ``none_on_404`` a 404 counts as "this route does not exist here"
+        instead of an error; older CrowdSec versions do not serve every route
+        to a machine token.
+        """
         for attempt in range(2):
             token = await self._async_token(force=attempt > 0)
             try:
@@ -266,8 +290,10 @@ class CrowdSecClient:
                         raise CrowdSecAuthError(
                             f"LAPI denies {path} despite a valid token "
                             f"(HTTP {response.status}): {body.strip()[:200]}",
-                            ENDPOINT_ALERTS,
+                            endpoint,
                         )
+                    if response.status == 404 and none_on_404:
+                        return None
                     if response.status not in (200, 201):
                         body = await response.text()
                         raise CrowdSecConnectionError(
@@ -282,7 +308,7 @@ class CrowdSecClient:
             except aiohttp.ClientError as err:
                 raise CrowdSecConnectionError(f"LAPI {path} failed: {err}") from err
 
-        raise CrowdSecAuthError(f"LAPI denies {path}", ENDPOINT_ALERTS)
+        raise CrowdSecAuthError(f"LAPI denies {path}", endpoint)
 
     async def _async_alerts_window(
         self, window: Window, limit: int
@@ -399,20 +425,68 @@ class CrowdSecClient:
         data = await self._async_lapi_request(
             "DELETE", "/v1/decisions", {"scope": "Ip", "value": ip}
         )
-        if isinstance(data, dict):
-            raw = data.get("nbDeleted")
-            try:
-                return int(raw)
-            except (TypeError, ValueError):
-                return 0
-        return 0
+        return _deleted_count(data)
 
-    async def async_get_active_decision_count(self) -> int | None:
-        """Number of active decisions via the bouncer API.
+    async def async_delete_decision(self, decision_id: int) -> int:
+        """Delete a single decision by its ID; returns how many were removed.
 
-        ``None`` if no bouncer key is configured or the endpoint has nothing to
-        report — the ``cs_active_decisions`` metric then takes over.
+        The route by ID is what makes a targeted unban possible: an address can
+        carry several decisions — from different scenarios, or one local and
+        one from the CAPI — and removing all of them because one row was
+        clicked would take away more than the click asked for.
         """
+        data = await self._async_lapi_request(
+            "DELETE",
+            f"/v1/decisions/{int(decision_id)}",
+            endpoint=ENDPOINT_DECISIONS,
+        )
+        return _deleted_count(data)
+
+    async def async_get_decisions(self) -> list[dict[str, Any]] | None:
+        """All active decisions, the way ``cscli decisions list`` sees them.
+
+        The machine token is asked first — it is always configured, whereas the
+        bouncer key is optional. Only if the LAPI denies the route to a machine
+        does the bouncer key take over. ``None`` means neither path works; the
+        caller then falls back to the ``cs_active_decisions`` metric, which
+        knows the count but no details.
+        """
+        try:
+            data = await self._async_lapi_request(
+                "GET",
+                "/v1/decisions",
+                endpoint=ENDPOINT_DECISIONS,
+                none_on_404=True,
+            )
+        except CrowdSecAuthError as err:
+            if self._bouncer_api_key is not None:
+                _LOGGER.debug(
+                    "LAPI denies /v1/decisions to the machine token — using "
+                    "the bouncer key instead"
+                )
+                return await self._async_bouncer_decisions()
+            # A valid token that is refused on this one route says something
+            # about the CrowdSec version, not about the credentials. Treating
+            # it as an outage would mark the whole instance unreachable over a
+            # feature the rest does not depend on.
+            _LOGGER.warning(
+                "LAPI denies /v1/decisions to the machine token (%s) — the ban "
+                "list stays empty. A bouncer API key would provide it",
+                err,
+            )
+            return None
+
+        if data is None:
+            # 404: some builds only serve the route to bouncers.
+            if self._bouncer_api_key is None:
+                return None
+            return await self._async_bouncer_decisions()
+        if not isinstance(data, list):
+            raise CrowdSecConnectionError("LAPI /v1/decisions did not return an array")
+        return [item for item in data if isinstance(item, dict)]
+
+    async def _async_bouncer_decisions(self) -> list[dict[str, Any]] | None:
+        """The decision list via the bouncer API."""
         if self._bouncer_api_key is None:
             return None
         try:
@@ -444,10 +518,23 @@ class CrowdSecClient:
             raise CrowdSecConnectionError(f"/v1/decisions failed: {err}") from err
 
         if not data:
-            return 0
+            return []
         if not isinstance(data, list):
             raise CrowdSecConnectionError("LAPI /v1/decisions did not return an array")
-        return len(data)
+        return [item for item in data if isinstance(item, dict)]
+
+    async def async_get_active_decision_count(self) -> int | None:
+        """Number of active decisions via the bouncer API.
+
+        ``None`` if no bouncer key is configured or the endpoint has nothing to
+        report — the ``cs_active_decisions`` metric then takes over.
+
+        Deliberately the bouncer path only: this is what the config flow uses
+        to check the key. Going through the machine token here would let a
+        wrong bouncer key pass validation unnoticed.
+        """
+        decisions = await self._async_bouncer_decisions()
+        return None if decisions is None else len(decisions)
 
     async def async_validate(self) -> None:
         """Check every access path the coordinator will need later.

@@ -1,0 +1,59 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build and publish
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # HACS shows the tag, the integration reports the manifest version — if
+      # the two drift apart, an update looks installed but is not.
+      - name: Check manifest version against tag
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          manifest=$(python -c "import json;print(json.load(open('custom_components/crowdsec/manifest.json'))['version'])")
+          if [ "$tag" != "$manifest" ]; then
+            echo "Tag $GITHUB_REF_NAME does not match manifest version $manifest" >&2
+            exit 1
+          fi
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: pip install -r requirements_test.txt
+      - run: pytest -q
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: card/package-lock.json
+
+      # The built card is not committed; it is created here and travels in the
+      # zip, because that is the only copy a HACS install ever sees.
+      - run: npm --prefix card ci
+      - run: npm --prefix card test
+      - run: npm --prefix card run build
+
+      # HACS extracts the zip straight into custom_components/crowdsec, so
+      # manifest.json has to sit at the root of the archive.
+      - name: Build crowdsec.zip
+        run: |
+          cd custom_components/crowdsec
+          zip -r "$GITHUB_WORKSPACE/crowdsec.zip" . -x '*__pycache__*' '*.pyc'
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" crowdsec.zip \
+            --title "CrowdSec ${GITHUB_REF_NAME#v}" \
+            --generate-notes
