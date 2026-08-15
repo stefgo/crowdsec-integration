@@ -235,11 +235,33 @@ same text is on the release page of each version.
 
 Under *Configure* you can adjust the polling interval (default 60 s), the
 timeout per request (15 s), the threshold for the parse error rate (5 %), the
-number of intervals without bouncer queries before a problem is raised (5) and
-the number of alerts per query (1000). The timeout applies per request and has
-to be lower than the polling interval — for an instance behind a VPN or a slow
-proxy a higher value helps. The three queries of a cycle run in parallel, so
-the timeouts do not add up.
+number of intervals without bouncer queries before a problem is raised (5),
+the number of alerts per query (1000), how often the whole 24h alert window is
+refetched (300 s) and which decisions end up in the card (local only). The
+timeout applies per request and has to be lower than the polling interval —
+for an instance behind a VPN or a slow proxy a higher value helps. The three
+queries of a cycle run in parallel, so the timeouts do not add up.
+
+Addresses and credentials can be changed later under *Reconfigure*; leaving
+the password or the bouncer key empty keeps the stored one.
+
+### How much the instance is asked for
+
+Two settings decide that, and neither of them slows down how quickly a new ban
+is noticed:
+
+* **Full alert refresh** — the 24h numbers come from a window the integration
+  keeps itself. It is refetched in full on this interval; in between, every
+  cycle only asks for the minutes since the last one and merges the result in.
+  Refetching 24 hours every minute transfers the same alerts over and over,
+  and with the window splitting below that can be sixteen requests per cycle.
+* **Decisions in the card** — `local only` fetches just the decisions made on
+  this instance, which are exactly the ones the card can lift. An instance
+  subscribed to a blocklist enforces hundreds of thousands of decisions that
+  no click can change; `Active decisions` keeps counting all of them through
+  the `cs_active_decisions` metric. Set it to `all` if you want CAPI and
+  blocklist entries listed too. The table stops at 2000 rows either way and
+  says so when it does.
 
 ### Completeness of the 24h numbers
 
@@ -352,15 +374,31 @@ python -m pytest
 npm --prefix card test
 ```
 
-Covered are the parts without a Home Assistant dependency, which are at the
-same time the most error-prone ones: the Prometheus parser, the rate and
-restart logic, the alert evaluation including ban detection, the normalisation
-and enrichment of the decisions, the splitting of the time windows as well as
-the consistency of manifest, `strings.json` and the translations. On the card
-side the search, filter and sort logic is tested with vitest, together with the
-card's own translations — German and English have to carry the same keys and
-the same placeholders. CI additionally runs `hassfest` and the HACS validation
-(see
+`tests/` covers the parts without a Home Assistant dependency, which are at
+the same time the most error-prone ones: the Prometheus parser, the rate and
+restart logic, the alert evaluation including ban detection and the rolling
+alert window, the normalisation and enrichment of the decisions, the splitting
+of the time windows, the input validation as well as the consistency of
+manifest, `strings.json` and the translations. It installs with nothing but
+pytest, which is what keeps those modules framework-free.
+
+Everything that does import Home Assistant is covered separately, because it
+needs the real thing:
+
+```bash
+pip install -r requirements_test_ha.txt
+python -m pytest -c pytest_ha.ini
+```
+
+That suite exercises the config, reauth, reconfigure and options flows, the
+update cycle including the error routing and the ban events, the WebSocket
+commands, the services, the repair flow and the diagnostics redaction.
+
+On the card side the search, filter and sort logic is tested with vitest,
+together with the paging of the WebSocket answers and the card's own
+translations — German and English have to carry the same keys and the same
+placeholders. CI additionally runs `ruff`, `mypy`, `hassfest` and the HACS
+validation (see
 [.github/workflows/validate.yml](.github/workflows/validate.yml)).
 
 ## License
