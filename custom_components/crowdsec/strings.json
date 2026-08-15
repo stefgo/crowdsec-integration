@@ -77,6 +77,9 @@
     "entry_not_loaded": {
       "message": "The CrowdSec instance \"{name}\" is not loaded."
     },
+    "invalid_duration": {
+      "message": "\"{duration}\" is not a usable ban duration: {error}"
+    },
     "invalid_ip": {
       "message": "\"{ip}\" is not a valid IP address or range."
     },
@@ -99,7 +102,7 @@
         },
         "duration": {
           "name": "Duration",
-          "description": "How long the ban lasts, e.g. 30m, 4h or 1d."
+          "description": "How long the ban lasts, e.g. 30m, 4h or 1h30m. CrowdSec has no day unit — use 168h instead of 7d."
         },
         "reason": {
           "name": "Reason",

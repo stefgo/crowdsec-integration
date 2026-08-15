@@ -11,7 +11,6 @@ import logging
 from typing import Any
 
 import voluptuous as vol
-
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant, ServiceCall, callback
 from homeassistant.exceptions import ServiceValidationError
@@ -31,13 +30,11 @@ from .const import (
     SERVICE_REFRESH,
     SERVICE_UNBAN_IP,
 )
+from .validation import normalize_ban_duration, normalize_ip_target
 
 _LOGGER = logging.getLogger(__name__)
 
 ENTRY_SELECTOR = ConfigEntrySelector({"integration": DOMAIN})
-
-# A duration such as "4h", "30m" or "1d" — exactly the format of cscli.
-DURATION_PATTERN = r"^\d+(\.\d+)?[smhd]$"
 
 BASE_SCHEMA = {
     vol.Required(ATTR_CONFIG_ENTRY_ID): ENTRY_SELECTOR,
@@ -47,9 +44,7 @@ BAN_SCHEMA = vol.Schema(
     {
         **BASE_SCHEMA,
         vol.Required(ATTR_IP): cv.string,
-        vol.Optional(ATTR_DURATION, default=DEFAULT_BAN_DURATION): vol.Match(
-            DURATION_PATTERN
-        ),
+        vol.Optional(ATTR_DURATION, default=DEFAULT_BAN_DURATION): cv.string,
         vol.Optional(ATTR_REASON, default=DEFAULT_BAN_REASON): cv.string,
     }
 )
@@ -79,19 +74,39 @@ def _coordinator(hass: HomeAssistant, call: ServiceCall):
 
 
 def _validated_ip(call: ServiceCall) -> str:
-    """Validate the target address before it goes to the LAPI."""
-    raw = str(call.data[ATTR_IP]).strip()
+    """Validate the target address before it goes to the LAPI.
+
+    Single addresses and CIDR ranges are both allowed — CrowdSec uses the
+    scope "Ip" for both.
+    """
+    raw = str(call.data[ATTR_IP])
     try:
-        # Single addresses and CIDR ranges are both allowed — CrowdSec uses
-        # the scope "Ip" for both.
-        cv.matches_regex(r"^[0-9a-fA-F:.]+(/\d{1,3})?$")(raw)
-    except vol.Invalid as err:
+        return normalize_ip_target(raw)
+    except ValueError as err:
         raise ServiceValidationError(
             translation_domain=DOMAIN,
             translation_key="invalid_ip",
-            translation_placeholders={"ip": raw},
+            translation_placeholders={"ip": raw.strip()},
         ) from err
-    return raw
+
+
+def _validated_duration(call: ServiceCall) -> str:
+    """Validate the ban duration.
+
+    Deliberately here and not in the schema: a schema violation reaches the
+    user as an untranslated voluptuous message, whereas a
+    ``ServiceValidationError`` carries a translated text and says what is
+    wrong with the value.
+    """
+    raw = str(call.data[ATTR_DURATION])
+    try:
+        return normalize_ban_duration(raw)
+    except ValueError as err:
+        raise ServiceValidationError(
+            translation_domain=DOMAIN,
+            translation_key="invalid_duration",
+            translation_placeholders={"duration": raw.strip(), "error": str(err)},
+        ) from err
 
 
 def _wrap_api_error(err: Exception) -> ServiceValidationError:
@@ -112,13 +127,12 @@ def async_setup_services(hass: HomeAssistant) -> None:
     async def async_ban(call: ServiceCall) -> None:
         coordinator = _coordinator(hass, call)
         ip = _validated_ip(call)
+        duration = _validated_duration(call)
         try:
-            await coordinator.client.async_ban_ip(
-                ip, call.data[ATTR_DURATION], call.data[ATTR_REASON]
-            )
+            await coordinator.client.async_ban_ip(ip, duration, call.data[ATTR_REASON])
         except (CrowdSecAuthError, CrowdSecConnectionError) as err:
             raise _wrap_api_error(err) from err
-        _LOGGER.info("Banned %s (%s)", ip, call.data[ATTR_DURATION])
+        _LOGGER.info("Banned %s (%s)", ip, duration)
         await coordinator.async_request_refresh()
 
     async def async_unban(call: ServiceCall) -> None:

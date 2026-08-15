@@ -77,6 +77,9 @@
     "entry_not_loaded": {
       "message": "Die CrowdSec-Instanz „{name}\" ist nicht geladen."
     },
+    "invalid_duration": {
+      "message": "„{duration}\" ist keine verwendbare Bann-Dauer: {error}"
+    },
     "invalid_ip": {
       "message": "„{ip}\" ist keine gültige IP-Adresse und kein gültiger Bereich."
     },
@@ -99,7 +102,7 @@
         },
         "duration": {
           "name": "Dauer",
-          "description": "Wie lange der Ban gilt, z. B. 30m, 4h oder 1d."
+          "description": "Wie lange der Ban gilt, z. B. 30m, 4h oder 1h30m. CrowdSec kennt keine Tages-Einheit — statt 7d also 168h."
         },
         "reason": {
           "name": "Grund",

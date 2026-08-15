@@ -12,7 +12,6 @@ import logging
 from typing import Any
 
 import voluptuous as vol
-
 from homeassistant.components import websocket_api
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant, callback
@@ -26,6 +25,7 @@ from .const import (
     WS_INSTANCES,
 )
 from .coordinator import CrowdSecCoordinator
+from .validation import normalize_ip_target
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -129,9 +129,7 @@ async def ws_decisions_list(
             "available": data.decisions_available,
             "reachable": data.reachable,
             "alerts_truncated": data.alerts_truncated,
-            "last_update": (
-                data.last_update.isoformat() if data.last_update else None
-            ),
+            "last_update": (data.last_update.isoformat() if data.last_update else None),
         },
     )
 
@@ -165,11 +163,25 @@ async def ws_decisions_delete(
         )
         return
 
+    targets: set[str] = set()
+    if ip is not None:
+        # The same check the services do. The card only ever sends addresses it
+        # got from the table, but a WebSocket command is a public interface —
+        # an unchecked value would go straight to the LAPI.
+        try:
+            normalized = normalize_ip_target(ip)
+        except ValueError as err:
+            connection.send_error(msg["id"], "invalid_target", str(err))
+            return
+        # Both spellings count when looking for the rows: CrowdSec stores the
+        # address the way it received it, which does not have to match the
+        # normal form (``2001:0db8::1`` vs. ``2001:db8::1``).
+        targets = {ip.strip(), normalized}
+        ip = normalized
+
     rows = coordinator.data.decisions if coordinator.data else []
     if decision_id is not None:
-        target = next(
-            (row for row in rows if row.decision_id == decision_id), None
-        )
+        target = next((row for row in rows if row.decision_id == decision_id), None)
         if target is not None and not target.deletable:
             # CAPI and blocklist decisions are pushed by the central API; a
             # local delete would be undone by the next pull.
@@ -181,7 +193,7 @@ async def ws_decisions_delete(
             )
             return
     else:
-        matching = [row for row in rows if row.value == ip]
+        matching = [row for row in rows if row.value in targets]
         if matching and not any(
             row.origin_kind == ORIGIN_KIND_LOCAL for row in matching
         ):
