@@ -5,14 +5,43 @@ from __future__ import annotations
 from dataclasses import asdict
 from datetime import datetime
 from typing import Any
+from urllib.parse import urlsplit, urlunsplit
 
 from homeassistant.components.diagnostics import async_redact_data
 from homeassistant.core import HomeAssistant
 
-from .const import CONF_BOUNCER_API_KEY, CONF_MACHINE_ID, CONF_MACHINE_PASSWORD
+from .const import (
+    CONF_BOUNCER_API_KEY,
+    CONF_LAPI_URL,
+    CONF_MACHINE_ID,
+    CONF_MACHINE_PASSWORD,
+    CONF_METRICS_URL,
+)
 from .coordinator import CrowdSecConfigEntry
 
 TO_REDACT = {CONF_MACHINE_ID, CONF_MACHINE_PASSWORD, CONF_BOUNCER_API_KEY}
+
+# The addresses are not secrets, but they carry internal host names, DDNS
+# entries and tunnel endpoints — and diagnostics get pasted into public issues.
+# The host goes, the shape stays: scheme, port and path are what a support
+# question is actually about.
+TO_REDACT_HOSTS = (CONF_LAPI_URL, CONF_METRICS_URL)
+
+
+def _redact_host(url: Any) -> Any:
+    """Replace the host of a URL, keeping scheme, port and path."""
+    if not isinstance(url, str) or not url.strip():
+        return url
+    try:
+        parts = urlsplit(url)
+    except ValueError:
+        return "**REDACTED**"
+    if not parts.hostname:
+        return "**REDACTED**"
+    netloc = "**REDACTED**"
+    if parts.port:
+        netloc = f"{netloc}:{parts.port}"
+    return urlunsplit((parts.scheme, netloc, parts.path, parts.query, parts.fragment))
 
 
 def _redact_addresses(data: dict[str, Any]) -> None:
@@ -57,8 +86,13 @@ async def async_get_config_entry_diagnostics(
                 data[key] = value.isoformat()
         _redact_addresses(data)
 
+    config = async_redact_data(dict(entry.data), TO_REDACT)
+    for key in TO_REDACT_HOSTS:
+        if key in config:
+            config[key] = _redact_host(config[key])
+
     return {
-        "config": async_redact_data(dict(entry.data), TO_REDACT),
+        "config": config,
         "options": dict(entry.options),
         "data": data,
         # Without the raw counters there is no way to tell what CrowdSec

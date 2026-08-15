@@ -19,6 +19,21 @@
           "bouncer_api_key": "Only needed for an exact decision count; otherwise the cs_active_decisions metric is used."
         }
       },
+      "reconfigure": {
+        "title": "Reconfigure CrowdSec",
+        "description": "Change the addresses or the credentials of this instance. Leave the password and the bouncer key empty to keep the stored ones.\n\n{error_detail}",
+        "data": {
+          "metrics_url": "Metrics URL",
+          "lapi_url": "LAPI URL",
+          "machine_id": "Machine ID",
+          "machine_password": "Machine password (leave empty to keep)",
+          "bouncer_api_key": "Bouncer API key (leave empty to keep)",
+          "verify_ssl": "Verify SSL certificate"
+        },
+        "data_description": {
+          "bouncer_api_key": "Add one here if the ban table stays empty — some CrowdSec versions only serve the decision list to bouncers."
+        }
+      },
       "reauth_confirm": {
         "title": "Re-authenticate CrowdSec",
         "description": "The LAPI rejected the stored credentials.\n\n{error_detail}",
@@ -40,6 +55,7 @@
     "abort": {
       "already_configured": "This instance is already configured.",
       "reauth_successful": "Re-authentication succeeded.",
+      "reconfigure_successful": "The instance was reconfigured.",
       "unique_id_mismatch": "These credentials belong to a different CrowdSec instance."
     }
   },
@@ -78,6 +94,27 @@
     }
   },
   "issues": {
+    "decisions_unavailable": {
+      "title": "CrowdSec is not handing over the ban list",
+      "fix_flow": {
+        "step": {
+          "confirm": {
+            "title": "Add a bouncer API key",
+            "description": "The instance \"{name}\" refuses the decision list to the machine token — some CrowdSec versions only serve it to bouncers. Create a key with `cscli bouncers add homeassistant` and paste it here; the ban table then fills up again.\n\n{error_detail}",
+            "data": {
+              "bouncer_api_key": "Bouncer API key"
+            }
+          }
+        },
+        "error": {
+          "cannot_connect": "Cannot reach the instance.",
+          "invalid_auth_bouncer": "CrowdSec rejected this key."
+        },
+        "abort": {
+          "entry_not_found": "This CrowdSec instance no longer exists."
+        }
+      }
+    },
     "alerts_truncated": {
       "title": "CrowdSec 24h numbers are incomplete",
       "description": "The instance \"{name}\" reports more alerts in one minute than a single query returns ({limit}). Splitting the time window did not help, so \"Alerts 24h\", \"New bans 24h\" and the top lists are truncated. Raise \"Alerts per query\" in the integration options."

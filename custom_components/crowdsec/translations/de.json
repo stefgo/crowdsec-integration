@@ -19,6 +19,21 @@
           "bouncer_api_key": "Nur nötig für eine exakte Decision-Zahl; sonst wird die Metrik cs_active_decisions verwendet."
         }
       },
+      "reconfigure": {
+        "title": "CrowdSec neu konfigurieren",
+        "description": "Adressen oder Zugangsdaten dieser Instanz ändern. Passwort und Bouncer-Key leer lassen, um die gespeicherten zu behalten.\n\n{error_detail}",
+        "data": {
+          "metrics_url": "Metrics-URL",
+          "lapi_url": "LAPI-URL",
+          "machine_id": "Machine-ID",
+          "machine_password": "Machine-Passwort (leer lassen = unverändert)",
+          "bouncer_api_key": "Bouncer-API-Key (leer lassen = unverändert)",
+          "verify_ssl": "SSL-Zertifikat prüfen"
+        },
+        "data_description": {
+          "bouncer_api_key": "Hier einen hinterlegen, wenn die Ban-Tabelle leer bleibt — manche CrowdSec-Versionen liefern die Decision-Liste nur an Bouncer."
+        }
+      },
       "reauth_confirm": {
         "title": "CrowdSec neu anmelden",
         "description": "Die LAPI hat die gespeicherten Zugangsdaten abgelehnt.\n\n{error_detail}",
@@ -40,6 +55,7 @@
     "abort": {
       "already_configured": "Diese Instanz ist bereits eingerichtet.",
       "reauth_successful": "Neuanmeldung erfolgreich.",
+      "reconfigure_successful": "Die Instanz wurde neu konfiguriert.",
       "unique_id_mismatch": "Diese Zugangsdaten gehören zu einer anderen CrowdSec-Instanz."
     }
   },
@@ -78,6 +94,27 @@
     }
   },
   "issues": {
+    "decisions_unavailable": {
+      "title": "CrowdSec gibt die Ban-Liste nicht heraus",
+      "fix_flow": {
+        "step": {
+          "confirm": {
+            "title": "Bouncer-API-Key hinterlegen",
+            "description": "Die Instanz „{name}\" verweigert dem Machine-Token die Decision-Liste — manche CrowdSec-Versionen liefern sie nur an Bouncer. Mit `cscli bouncers add homeassistant` einen Key anlegen und hier einfügen; danach füllt sich die Ban-Tabelle wieder.\n\n{error_detail}",
+            "data": {
+              "bouncer_api_key": "Bouncer-API-Key"
+            }
+          }
+        },
+        "error": {
+          "cannot_connect": "Die Instanz ist nicht erreichbar.",
+          "invalid_auth_bouncer": "CrowdSec hat diesen Key abgelehnt."
+        },
+        "abort": {
+          "entry_not_found": "Diese CrowdSec-Instanz existiert nicht mehr."
+        }
+      }
+    },
     "alerts_truncated": {
       "title": "CrowdSec-24h-Zahlen sind unvollständig",
       "description": "Die Instanz „{name}\" meldet in einer einzigen Minute mehr Alerts, als eine Abfrage liefert ({limit}). Das Aufteilen des Zeitfensters hat nicht gereicht, daher sind „Alerts 24h\", „Neue Bans 24h\" und die Top-Listen abgeschnitten. Erhöhe „Alerts je Abfrage\" in den Optionen der Integration."

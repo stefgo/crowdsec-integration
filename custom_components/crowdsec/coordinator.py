@@ -54,6 +54,7 @@ from .const import (
     DOMAIN,
     EVENT_NEW_BAN,
     ISSUE_ALERTS_TRUNCATED,
+    ISSUE_DECISIONS_UNAVAILABLE,
     LOCAL_ORIGINS,
     MAX_DECISION_ROWS,
     METRIC_ACTIVE_DECISIONS,
@@ -179,6 +180,7 @@ class CrowdSecCoordinator(DataUpdateCoordinator[CrowdSecData]):
         self._known_alert_ids: set[str] | None = None
         self._device_version: str | None = None
         self._truncation_reported = False
+        self._bouncer_key_reported = False
         # Raw CrowdSec metrics of the last successful scrape, only for the
         # diagnostics data.
         self.raw_metrics: dict[str, list[dict[str, Any]]] = {}
@@ -280,6 +282,7 @@ class CrowdSecCoordinator(DataUpdateCoordinator[CrowdSecData]):
 
         self._evaluate_problem(data)
         self._update_device_version(data)
+        self._report_missing_bouncer_key()
         return data
 
     def _unwrap(self, data: CrowdSecData, result: Any, expected: type) -> Any | None:
@@ -559,6 +562,37 @@ class CrowdSecCoordinator(DataUpdateCoordinator[CrowdSecData]):
                 "name": entry.title,
                 "limit": str(self._alerts_limit),
             },
+        )
+
+    def _report_missing_bouncer_key(self) -> None:
+        """Offer a repair when the LAPI will not hand over the decision list.
+
+        Some CrowdSec versions only serve ``/v1/decisions`` to bouncers. The
+        user sees an empty ban table and, so far, nothing but a warning in the
+        log to explain it — with no hint that a bouncer key is all it takes.
+        """
+        needed = getattr(self.client, "decisions_need_bouncer_key", False)
+        if needed == self._bouncer_key_reported:
+            return
+        self._bouncer_key_reported = needed
+        entry = self.config_entry
+        if entry is None:
+            return
+
+        issue_id = f"{ISSUE_DECISIONS_UNAVAILABLE}_{entry.entry_id}"
+        if not needed:
+            ir.async_delete_issue(self.hass, DOMAIN, issue_id)
+            return
+
+        ir.async_create_issue(
+            self.hass,
+            DOMAIN,
+            issue_id,
+            is_fixable=True,
+            severity=ir.IssueSeverity.WARNING,
+            translation_key=ISSUE_DECISIONS_UNAVAILABLE,
+            translation_placeholders={"name": entry.title},
+            data={"entry_id": entry.entry_id},
         )
 
     def _update_device_version(self, data: CrowdSecData) -> None:

@@ -119,6 +119,41 @@ STEP_USER_SCHEMA = vol.Schema(
     }
 )
 
+# Reconfigure has no name field — the title is renamed through Home Assistant
+# itself — and its secrets are optional: an empty field keeps the stored value,
+# so the addresses can be corrected without retyping the password.
+STEP_RECONFIGURE_SCHEMA = vol.Schema(
+    {
+        vol.Required(CONF_METRICS_URL): cv.string,
+        vol.Required(CONF_LAPI_URL): cv.string,
+        vol.Required(CONF_MACHINE_ID): cv.string,
+        vol.Optional(CONF_MACHINE_PASSWORD): SECRET_SELECTOR,
+        vol.Optional(CONF_BOUNCER_API_KEY): SECRET_SELECTOR,
+        vol.Required(CONF_VERIFY_SSL, default=True): cv.boolean,
+    }
+)
+
+
+def merge_secrets(stored: dict[str, Any], user_input: dict[str, Any]) -> dict[str, Any]:
+    """Combine a form with the stored data, keeping untouched secrets.
+
+    A password field cannot be prefilled meaningfully — it would either show
+    the secret or hand back a placeholder that gets saved as the new password.
+    Leaving it empty therefore means "unchanged", and an explicitly emptied
+    bouncer key means "remove it".
+    """
+    merged = {**stored, **user_input}
+    for key in (CONF_MACHINE_PASSWORD, CONF_BOUNCER_API_KEY):
+        if not str(user_input.get(key, "")).strip():
+            if key == CONF_BOUNCER_API_KEY and key in user_input:
+                # Present but empty: the user cleared the field on purpose.
+                merged.pop(key, None)
+            elif key in stored:
+                merged[key] = stored[key]
+            else:
+                merged.pop(key, None)
+    return merged
+
 
 def build_unique_id(user_input: dict[str, Any]) -> str:
     """Identifier of an instance: LAPI address plus machine ID.
@@ -241,6 +276,57 @@ class CrowdSecConfigFlow(ConfigFlow, domain=DOMAIN):
                     vol.Required(CONF_MACHINE_PASSWORD): SECRET_SELECTOR,
                     vol.Optional(CONF_BOUNCER_API_KEY): SECRET_SELECTOR,
                 }
+            ),
+            errors=errors,
+            description_placeholders={"error_detail": detail},
+        )
+
+    async def async_step_reconfigure(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Change addresses and credentials of an existing instance.
+
+        Without this the only way to move an instance to a different address —
+        or to add a bouncer key afterwards — is to delete the entry and set it
+        up again, which throws away the entity IDs and their history.
+        """
+        errors: dict[str, str] = {}
+        detail = ""
+        entry = self._get_reconfigure_entry()
+        stored = dict(entry.data)
+
+        if user_input is not None:
+            merged = merge_secrets(stored, user_input)
+            # The identifier is derived from the address and the machine ID, so
+            # it moves with them — unlike a serial number it cannot be used to
+            # check that this is still the same engine. What has to be caught is
+            # the entry being pointed at an instance that is already set up:
+            # two entries with one identifier would fight over the same device.
+            unique_id = build_unique_id(merged)
+            taken = any(
+                other.unique_id == unique_id and other.entry_id != entry.entry_id
+                for other in self._async_current_entries()
+            )
+            if taken:
+                return self.async_abort(reason="already_configured")
+
+            result = await _async_validate(self.hass, merged)
+            if result is None:
+                return self.async_update_reload_and_abort(
+                    entry, data=merged, unique_id=unique_id
+                )
+            errors["base"], detail = result
+
+        suggested = {
+            key: value
+            for key, value in {**stored, **(user_input or {})}.items()
+            if key not in (CONF_MACHINE_PASSWORD, CONF_BOUNCER_API_KEY)
+        }
+
+        return self.async_show_form(
+            step_id="reconfigure",
+            data_schema=self.add_suggested_values_to_schema(
+                STEP_RECONFIGURE_SCHEMA, suggested
             ),
             errors=errors,
             description_placeholders={"error_detail": detail},

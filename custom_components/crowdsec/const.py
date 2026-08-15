@@ -132,6 +132,10 @@ WS_INSTANCES = f"{DOMAIN}/instances"
 
 # --- Repair issues --------------------------------------------------------
 ISSUE_ALERTS_TRUNCATED = "alerts_truncated"
+# The LAPI will not hand the decision list to a machine token. A bouncer key
+# is the way out, and the repair flow asks for one instead of leaving the
+# reason buried in a log warning.
+ISSUE_DECISIONS_UNAVAILABLE = "decisions_unavailable"
 
 # --- Metric names of the CrowdSec Prometheus endpoint ---------------------
 METRIC_ACTIVE_DECISIONS = "cs_active_decisions"

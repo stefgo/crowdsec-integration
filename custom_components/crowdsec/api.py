@@ -149,6 +149,10 @@ class CrowdSecClient:
         self._token: str | None = None
         self._token_expires: datetime | None = None
         self._login_lock = asyncio.Lock()
+        # Set when the decision list cannot be read and a bouncer key would be
+        # the way out. The coordinator turns it into a repair issue — this
+        # module stays free of Home Assistant imports.
+        self.decisions_need_bouncer_key = False
 
     @property
     def has_bouncer_key(self) -> bool:
@@ -495,13 +499,17 @@ class CrowdSecClient:
                 "list stays empty. A bouncer API key would provide it",
                 err,
             )
+            self.decisions_need_bouncer_key = True
             return None
 
         if data is None:
             # 404: some builds only serve the route to bouncers.
             if self._bouncer_api_key is None:
+                self.decisions_need_bouncer_key = True
                 return None
             return await self._async_bouncer_decisions(origins)
+
+        self.decisions_need_bouncer_key = False
         if not isinstance(data, list):
             raise CrowdSecConnectionError("LAPI /v1/decisions did not return an array")
         return [item for item in data if isinstance(item, dict)]
