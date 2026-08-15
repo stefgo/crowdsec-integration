@@ -13,3 +13,4 @@ htmlcov/
 
 # Contains the target host and paths of a private instance — stays local.
 builddeploy.sh
+.venv-ha/

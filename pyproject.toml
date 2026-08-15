@@ -51,3 +51,21 @@ files = [
 # has none either. Both only appear in the modules that are not checked here.
 module = ["homeassistant.*", "voluptuous.*"]
 ignore_missing_imports = true
+
+[tool.coverage.run]
+# Only the Home-Assistant-free modules — those are exactly what the suite in
+# tests/ exists for. The rest is covered by tests/ha in its own environment,
+# and averaging the two would produce a number that describes neither.
+omit = [
+    "custom_components/crowdsec/__init__.py",
+    "custom_components/crowdsec/api.py",
+    "custom_components/crowdsec/binary_sensor.py",
+    "custom_components/crowdsec/config_flow.py",
+    "custom_components/crowdsec/coordinator.py",
+    "custom_components/crowdsec/diagnostics.py",
+    "custom_components/crowdsec/entity.py",
+    "custom_components/crowdsec/repairs.py",
+    "custom_components/crowdsec/sensor.py",
+    "custom_components/crowdsec/services.py",
+    "custom_components/crowdsec/websocket_api.py",
+]

@@ -129,11 +129,21 @@ async def _async_register_card(hass: HomeAssistant) -> None:
 async def async_unload_entry(hass: HomeAssistant, entry: CrowdSecConfigEntry) -> bool:
     """Remove an instance."""
     unloaded = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
-    if unloaded and len(hass.config_entries.async_loaded_entries(DOMAIN)) <= 1:
-        # The entry being unloaded still counts here — if none is left, the
-        # services have no target.
+    if not unloaded:
+        return False
+
+    # The entry being unloaded is already out of async_loaded_entries by the
+    # time this runs, so it must not be counted against the total — filtering
+    # by entry_id keeps this correct either way. Removing the services while
+    # another instance is still loaded would disarm them for that one too.
+    remaining = [
+        other
+        for other in hass.config_entries.async_loaded_entries(DOMAIN)
+        if other.entry_id != entry.entry_id
+    ]
+    if not remaining:
         async_unload_services(hass)
-    return unloaded
+    return True
 
 
 async def async_reload_entry(hass: HomeAssistant, entry: CrowdSecConfigEntry) -> None:

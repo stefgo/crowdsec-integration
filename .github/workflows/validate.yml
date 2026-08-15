@@ -63,7 +63,7 @@ jobs:
       - run: pip install -r requirements_test_ha.txt
       # Its own invocation: these tests need the real Home Assistant fixtures,
       # whereas pytest.ini is set up for the framework-free suite.
-      - run: pytest tests/ha -q -p no:cacheprovider --no-cov -c /dev/null
+      - run: pytest -p no:cacheprovider -c pytest_ha.ini
 
   card:
     name: card

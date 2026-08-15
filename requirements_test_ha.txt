@@ -1,0 +1,9 @@
+# The tests under tests/ha need a real Home Assistant: config flows, the
+# coordinator's reauth path and the WebSocket commands cannot be exercised
+# without it. They are deliberately kept apart from the framework-free suite in
+# tests/ — that one has to stay installable with nothing but pytest.
+pytest>=8.0
+pytest-homeassistant-custom-component>=0.13.200
+# The integration depends on the frontend component (it serves its own card),
+# which refuses to set up without the frontend package.
+home-assistant-frontend
