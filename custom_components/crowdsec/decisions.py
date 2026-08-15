@@ -23,7 +23,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from .alerts import parse_timestamp, source_value
+from .alerts import alert_timestamp, parse_timestamp, source_value
 from .const import (
     DECISION_STATUS_ACTIVE,
     DECISION_STATUS_EXPIRED,
@@ -187,9 +187,7 @@ def build_source_index(alerts: Iterable[dict[str, Any]]) -> dict[str, SourceInfo
         if value is None:
             continue
 
-        created = parse_timestamp(alert.get("created_at")) or parse_timestamp(
-            alert.get("start_at")
-        )
+        created = alert_timestamp(alert)
         previous = index.get(value)
         count = (previous.alerts if previous else 0) + 1
 
@@ -322,9 +320,7 @@ def history_from_alerts(
         if not isinstance(alert, dict) or alert.get("simulated"):
             continue
 
-        created = parse_timestamp(alert.get("created_at")) or parse_timestamp(
-            alert.get("start_at")
-        )
+        created = alert_timestamp(alert)
         country = _source_field(alert, "cn")
         as_name = _source_field(alert, "as_name")
         as_number = _source_field(alert, "as_number")

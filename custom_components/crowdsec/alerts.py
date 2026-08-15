@@ -10,7 +10,7 @@ from __future__ import annotations
 from collections import Counter
 from collections.abc import Iterable
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 # An alert without a usable source gets this key so that it does not disappear
@@ -38,6 +38,13 @@ def parse_timestamp(raw: Any) -> datetime | None:
     if parsed.tzinfo is None:
         parsed = parsed.replace(tzinfo=UTC)
     return parsed.astimezone(UTC)
+
+
+def alert_timestamp(alert: dict[str, Any]) -> datetime | None:
+    """When an alert was raised — ``created_at`` with ``start_at`` as fallback."""
+    return parse_timestamp(alert.get("created_at")) or parse_timestamp(
+        alert.get("start_at")
+    )
 
 
 def alert_id(alert: dict[str, Any]) -> str | None:
@@ -173,9 +180,7 @@ def summarize_alerts(alerts: Iterable[dict[str, Any]], top_count: int) -> AlertS
         sources[ip or UNKNOWN] += 1
         countries[_source_field(alert, "cn") or UNKNOWN] += 1
 
-        created = parse_timestamp(alert.get("created_at")) or parse_timestamp(
-            alert.get("start_at")
-        )
+        created = alert_timestamp(alert)
         if created is not None and (
             summary.latest_alert is None or created > summary.latest_alert
         ):
@@ -218,6 +223,85 @@ def summarize_alerts(alerts: Iterable[dict[str, Any]], top_count: int) -> AlertS
     summary.top_sources = _ranked(sources, "ip", top_count)
 
     return summary
+
+
+class AlertCache:
+    """A rolling time window of alerts, kept across update cycles.
+
+    The LAPI has no cheap way to ask "what changed": every query re-transfers
+    whole alert objects. Asking for the full 24 hours once a minute is
+    therefore wasteful — and with the window splitting behind it, one cycle can
+    turn into sixteen requests.
+
+    So the coordinator keeps the window here instead: a full query fills the
+    cache from scratch now and then, while every cycle only asks for the few
+    minutes since the last one and adds them. What ages out of the window is
+    dropped. The evaluation itself does not change — it runs over the cache
+    with the same :func:`summarize_alerts` as before.
+
+    Alerts are keyed by :func:`alert_id`, so the overlap the incremental
+    queries deliberately have does not produce duplicates.
+    """
+
+    def __init__(self, window: timedelta) -> None:
+        self._window = window
+        self._alerts: dict[str, dict[str, Any]] = {}
+        # Alerts without any usable identifier cannot be recognised again.
+        # They get a running key so that they at least do not overwrite each
+        # other; the next full query clears them out.
+        self._anonymous = 0
+
+    def __len__(self) -> int:
+        return len(self._alerts)
+
+    @property
+    def alerts(self) -> list[dict[str, Any]]:
+        """The alerts currently in the window."""
+        return list(self._alerts.values())
+
+    def replace(self, alerts: Iterable[dict[str, Any]]) -> None:
+        """Take the result of a full query as the new content."""
+        self._alerts = {}
+        self._anonymous = 0
+        self.add(alerts)
+
+    def add(self, alerts: Iterable[dict[str, Any]]) -> int:
+        """Merge the result of an incremental query in.
+
+        Returns how many of them were not in the window yet — only useful for
+        the log, since the ban detection works on identifiers, not on counts.
+        """
+        added = 0
+        for alert in alerts:
+            if not isinstance(alert, dict):
+                continue
+            key = alert_id(alert)
+            if key is None:
+                self._anonymous += 1
+                key = f"anon:{self._anonymous}"
+            if key not in self._alerts:
+                added += 1
+            # A known alert is overwritten on purpose: CrowdSec updates
+            # events_count and decisions of an ongoing alert.
+            self._alerts[key] = alert
+        return added
+
+    def prune(self, now: datetime) -> int:
+        """Drop everything that has fallen out of the window.
+
+        An alert without a usable timestamp is kept — it would otherwise
+        vanish on the first cycle even though the LAPI just sent it. The next
+        full query sorts those out.
+        """
+        cutoff = now - self._window
+        stale = [
+            key
+            for key, alert in self._alerts.items()
+            if (created := alert_timestamp(alert)) is not None and created < cutoff
+        ]
+        for key in stale:
+            del self._alerts[key]
+        return len(stale)
 
 
 def new_bans(summary: AlertSummary, known_ids: set[str] | None) -> list[BanRecord]:
