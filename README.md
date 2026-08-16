@@ -106,8 +106,9 @@ Bans** (`custom:crowdsec-bans-card`).
 
 The card opens on **active** decisions of **local** origin — that is what this
 Home Assistant owns and can act on. The CAPI and the blocklists contribute
-thousands of rows that can neither be removed nor read usefully; they are one
-chip away when you want them.
+thousands of rows that can neither be removed nor read usefully, so by default
+the integration does not even fetch them; the integration option *Decisions in
+the card* brings them back if you want them listed.
 
 Clicking a row opens the details — every raw field of the decision plus the
 alert context. The search box works over address, scenario, AS, country,
@@ -128,19 +129,50 @@ pushed centrally, and a local delete would be undone on the next pull.
 
 Only administrators can see the card and remove decisions.
 
+### Options
+
+Everything except `type` is optional, and every option below can also be set in
+the visual editor — with the exception of `sort_desc`, which is YAML only.
+
+| Option | Type | Default | What it does |
+| --- | --- | --- | --- |
+| `type` | string | — | `custom:crowdsec-bans-card`. Required. |
+| `title` | string | localised | Heading of the card — "CrowdSec bans" / "CrowdSec-Sperren" when left out. The count line below it is not affected. |
+| `config_entry_id` | string | first instance | Which CrowdSec instance to show. Left out, the card takes the first loaded one; with more than one instance configured a picker appears in the header either way. Set it when a dashboard should always open on one particular engine. |
+| `status` | `active` \| `expired` \| `all` | `active` | Which rows the card opens with. `expired` shows the bans of the last 24 hours that have already run out, `all` both. The chips change it at runtime; anything else is refused when the card is saved. |
+| `origins` | list of `local`, `capi`, `lists` | `[local]` | Which origins the card opens with. `local` is what this Home Assistant can actually unban; `capi` and `lists` are pushed centrally. An empty list falls back to the default; an unknown name is refused when the card is saved. |
+| `sort` | see below | `seconds_left` | Column the table is sorted by. Clicking a column header changes it at runtime. |
+| `sort_desc` | boolean | `true` | Sort direction. With the default `seconds_left` this puts the bans with the most time left on top. |
+| `page_size` | number | `25` | Rows per page. The editor offers 5–200; in YAML anything from 1 up is accepted. This is the display page, unrelated to how the rows are fetched. |
+| `hide_filters` | boolean | `false` | Hides the search field and all filter chips. For a compact dashboard tile where the card is only meant to show the current state, not to be worked with. |
+
+Values for `sort`: `seconds_left`, `value` (address), `scenario`, `country`,
+`as_name`, `origin`, `type`. Rows without a remaining time always go last,
+in either direction — they say nothing about the ordering.
+
+A full example, with every option spelled out:
+
 ```yaml
 type: custom:crowdsec-bans-card
 title: CrowdSec
-status: active        # active (default) | expired | all
-origins: [local]      # default; also capi and lists
+config_entry_id: 01JABCDEF0123456789ABCDEFG
+status: active
+origins: [local]
 sort: seconds_left
+sort_desc: true
 page_size: 25
 hide_filters: false
 ```
 
-Everything is optional; without `config_entry_id` the card takes the first
-configured instance and offers a picker if there are several. The same options
-are available in the visual editor.
+Two of the card's behaviours are not card options but *integration* options,
+because they decide what is fetched in the first place (see
+[Configuration](#configuration)):
+
+* **Decisions in the card** — on `local only` the CAPI and blocklist chips
+  have nothing behind them. The card greys them out and says so in a tooltip
+  rather than emptying the table on a click.
+* **Full alert refresh** — how current the expired 24 h history is. The active
+  decisions come from the polling cycle either way.
 
 ## Push and badge on iOS/iPadOS
 
