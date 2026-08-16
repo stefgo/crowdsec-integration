@@ -83,6 +83,8 @@ export const EN = {
     "More alerts than one query returns — the history is incomplete.",
   "notice.rows_truncated":
     "More decisions than the card keeps — showing the ones expiring last.",
+  "filter.origin_excluded":
+    "Not fetched: the integration option \"Decisions in the card\" is set to \"local only\".",
   "notice.removed": "Removed {count} decision(s).",
   "notice.removed_none":
     "CrowdSec removed nothing — the decision was already gone.",
@@ -199,6 +201,8 @@ const DE: Partial<Record<TranslationKey, string>> = {
     "Mehr Alarme, als eine Abfrage liefert — die Historie ist unvollständig.",
   "notice.rows_truncated":
     "Mehr Entscheidungen, als die Card vorhält — gezeigt werden die zuletzt ablaufenden.",
+  "filter.origin_excluded":
+    "Wird nicht geladen: Die Integrations-Option „Decisions in der Card\" steht auf „Nur lokale\".",
   "notice.removed": "{count} Entscheidung(en) entfernt.",
   "notice.removed_none":
     "CrowdSec hat nichts entfernt — die Entscheidung war bereits weg.",
