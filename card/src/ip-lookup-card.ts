@@ -290,13 +290,9 @@ export class CrowdSecIpLookupCard extends LitElement {
               </button>
             </div>`
           : nothing}
-        ${this._report ? this._renderReport(this._report) : this._renderEmpty()}
+        ${this._report ? this._renderReport(this._report) : nothing}
       </ha-card>
     `;
-  }
-
-  private _renderEmpty() {
-    return html`<div class="empty">${this._t("lookup.empty")}</div>`;
   }
 
   private _renderReport(report: IpReport) {
