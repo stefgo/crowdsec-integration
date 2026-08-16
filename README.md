@@ -100,7 +100,7 @@ Bans** (`custom:crowdsec-bans-card`).
 | Address | `value` of the decision, IP or CIDR range |
 | Type | `ban`, `captcha`, … |
 | Scenario | the scenario, namespace stripped; manual bans as `manual: <reason>` |
-| Country / AS | from the alert belonging to the address |
+| Country / network operator | from the alert belonging to the address |
 | Origin | `local` (deletable), `CAPI` or `blocklist` |
 | Remaining | derived from `duration`, or from `until` where the LAPI sends it |
 
@@ -117,7 +117,7 @@ disagree: the sensor counts everything the LAPI enforces, the table shows the
 part you can do something about.
 
 Clicking a row opens the details — every raw field of the decision plus the
-alert context. The search box works over address, scenario, AS, country,
+alert context. The search box works over address, scenario, operator, country,
 origin, type and scope; several words all have to match but may sit in
 different fields, so `de ssh` finds the German SSH bruteforcers. The chips
 filter by status, origin, type and scope; column headers sort.
@@ -195,7 +195,7 @@ request, made only when you ask:
 * **every decision in force**, with origin — including CAPI and blocklists. The
   table is the one from the ban card: same columns, same expandable rows, same
   per-row unban where the decision is a local one;
-* **the last 24 hours** from the alerts: how often, since when, country, AS and
+* **the last 24 hours** from the alerts: how often, since when, country, network operator and
   the scenarios. An address can be unknown to the decision list and still have
   shown up twenty times today.
 
