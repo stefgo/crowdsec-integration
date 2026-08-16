@@ -140,7 +140,7 @@ export const EN = {
   "lookup.scenarios": "Scenarios",
   "lookup.not_deletable":
     "Managed centrally — a local delete would be undone on the next pull.",
-  "lookup.ban": "Ban manually",
+  "lookup.ban": "Ban {ip} manually",
   "lookup.banning": "Banning …",
   "lookup.ban_duration": "Duration",
   "lookup.ban_reason": "Reason",
@@ -285,7 +285,7 @@ const DE: Partial<Record<TranslationKey, string>> = {
   "lookup.scenarios": "Szenarien",
   "lookup.not_deletable":
     "Zentral verwaltet — ein lokales Löschen würde beim nächsten Abgleich rückgängig gemacht.",
-  "lookup.ban": "Sperre manuell",
+  "lookup.ban": "Sperre manuell {ip}",
   "lookup.banning": "Wird gesperrt …",
   "lookup.ban_duration": "Dauer",
   "lookup.ban_reason": "Grund",

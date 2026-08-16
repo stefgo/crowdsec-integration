@@ -511,9 +511,12 @@ export class CrowdSecIpLookupCard extends LitElement {
                     ?disabled=${this._busy}
                     @click=${() => void this._ban()}
                   >
-                    ${this._busy ? t("lookup.banning") : t("lookup.ban")}
+                    ${
+                      this._busy
+                        ? t("lookup.banning")
+                        : t("lookup.ban", { ip: report.target })
+                    }
                   </button>
-                  <span class="mono">${report.target}</span>
                   <input
                     class="short"
                     aria-label=${t("lookup.ban_duration")}
