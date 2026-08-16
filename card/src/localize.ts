@@ -285,7 +285,7 @@ const DE: Partial<Record<TranslationKey, string>> = {
   "lookup.scenarios": "Szenarien",
   "lookup.not_deletable":
     "Zentral verwaltet — ein lokales Löschen würde beim nächsten Abgleich rückgängig gemacht.",
-  "lookup.ban": "Sperre manuell {ip}",
+  "lookup.ban": "Sperre {ip} manuell",
   "lookup.banning": "Wird gesperrt …",
   "lookup.ban_duration": "Dauer",
   "lookup.ban_reason": "Grund",
