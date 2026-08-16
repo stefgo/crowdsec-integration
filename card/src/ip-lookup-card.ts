@@ -255,19 +255,19 @@ export class CrowdSecIpLookupCard extends LitElement {
               ? html`<div class="actions">
                   <select
                     @change=${(event: Event) => {
-                    this._entryId = (event.target as HTMLSelectElement).value;
-                    this._report = null;
-                  }}
+                      this._entryId = (event.target as HTMLSelectElement).value;
+                      this._report = null;
+                    }}
                   >
                     ${this._instances.map(
-                    (instance) =>
-                      html`<option
-                        value=${instance.config_entry_id}
-                        ?selected=${instance.config_entry_id === this._entryId}
-                      >
-                        ${instance.title}
-                      </option>`,
-                  )}
+                      (instance) =>
+                        html`<option
+                          value=${instance.config_entry_id}
+                          ?selected=${instance.config_entry_id === this._entryId}
+                        >
+                          ${instance.title}
+                        </option>`,
+                    )}
                   </select>
                 </div>`
               : nothing
@@ -336,11 +336,11 @@ export class CrowdSecIpLookupCard extends LitElement {
           report.blocked
             ? html`<span class="sub">
                 ${formatRemaining(report.seconds_left, t)}${
-                report.expires_at
-                  ? html` · ${t("lookup.expires")}
-                    ${formatMoment(report.expires_at, this._locale, t)}`
-                  : nothing
-              }
+                  report.expires_at
+                    ? html` · ${t("lookup.expires")}
+                      ${formatMoment(report.expires_at, this._locale, t)}`
+                    : nothing
+                }
               </span>`
             : nothing
         }
@@ -351,8 +351,8 @@ export class CrowdSecIpLookupCard extends LitElement {
           ? html`<div class="notice">
               <span>
                 ${t("lookup.covered_by", {
-                ranges: report.covering_ranges.join(", "),
-              })}
+                  ranges: report.covering_ranges.join(", "),
+                })}
                 — ${t("lookup.covered_hint")}
               </span>
             </div>`
@@ -483,48 +483,53 @@ export class CrowdSecIpLookupCard extends LitElement {
       <div class="footer">
         ${
           canUnban
-            ? html`<button
-                class="text-button danger"
-                ?disabled=${this._busy}
-                @click=${() => void this._unban()}
-              >
-                ${t("action.unban_all", { ip: report.target })}
-              </button>`
+            ? html`<div class="footer-row">
+                <button
+                  class="text-button danger"
+                  ?disabled=${this._busy}
+                  @click=${() => void this._unban()}
+                >
+                  ${t("action.unban_all", { ip: report.target })}
+                </button>
+              </div>`
             : nothing
         }
         ${
           report.blocked && !report.deletable
-            ? html`<span class="hint">${t("lookup.not_deletable")}</span>`
+            ? html`<div class="footer-row">
+                <span class="hint">${t("lookup.not_deletable")}</span>
+              </div>`
             : nothing
         }
-        <div class="spacer"></div>
         ${
           this._config.hide_ban
             ? nothing
             : html`
-                <input
-                  class="short"
-                  aria-label=${t("lookup.ban_duration")}
-                  .value=${this._duration}
-                  @input=${(event: Event) => {
-                  this._duration = (event.target as HTMLInputElement).value;
-                }}
-                />
-                <input
-                  class="reason"
-                  aria-label=${t("lookup.ban_reason")}
-                  .value=${this._reason}
-                  @input=${(event: Event) => {
-                  this._reason = (event.target as HTMLInputElement).value;
-                }}
-                />
-                <button
-                  class="text-button"
-                  ?disabled=${this._busy}
-                  @click=${() => void this._ban()}
-                >
-                  ${this._busy ? t("lookup.banning") : t("lookup.ban")}
-                </button>
+                <div class="footer-row">
+                  <input
+                    class="short"
+                    aria-label=${t("lookup.ban_duration")}
+                    .value=${this._duration}
+                    @input=${(event: Event) => {
+                      this._duration = (event.target as HTMLInputElement).value;
+                    }}
+                  />
+                  <input
+                    class="reason"
+                    aria-label=${t("lookup.ban_reason")}
+                    .value=${this._reason}
+                    @input=${(event: Event) => {
+                      this._reason = (event.target as HTMLInputElement).value;
+                    }}
+                  />
+                  <button
+                    class="text-button danger"
+                    ?disabled=${this._busy}
+                    @click=${() => void this._ban()}
+                  >
+                    ${this._busy ? t("lookup.banning") : t("lookup.ban")}
+                  </button>
+                </div>
               `
         }
       </div>
@@ -591,13 +596,20 @@ export class CrowdSecIpLookupCard extends LitElement {
         padding: 4px 12px 8px;
       }
 
+      /* The two actions sit under each other: they are alternatives, not a
+         toolbar, and side by side the ban controls crowded the unban button
+         off the line as soon as the address got long. */
       .footer {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        padding: 8px 12px 12px;
+      }
+      .footer-row {
         display: flex;
         align-items: center;
         flex-wrap: wrap;
         gap: 8px;
-        padding: 8px 12px 12px;
-        border-top: 1px solid var(--divider-color);
       }
       .hint {
         font-size: 12px;
@@ -610,9 +622,12 @@ export class CrowdSecIpLookupCard extends LitElement {
         flex: 1;
         min-width: 8em;
       }
-      /* The text buttons bring their own padding; without compensation the row
-         would end short of the edge the rest of the card keeps. */
-      .footer .text-button:last-child {
+      /* The text buttons bring their own padding; without compensation they
+         would sit out of line with the card's 12px inset. */
+      .footer-row > .text-button:first-child {
+        margin-left: -8px;
+      }
+      .footer-row > .text-button:last-child {
         margin-right: -8px;
       }
     `,
