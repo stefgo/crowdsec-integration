@@ -24,7 +24,6 @@ export const EN = {
   "status.expired": "expired",
   "status.all": "all",
 
-
   "origin_label.manual": "manual",
   "origin_label.blocklist": "blocklist",
   "origin_label.unknown": "unknown",
@@ -125,9 +124,9 @@ export const EN = {
   "lookup.checking": "Checking …",
   "lookup.blocked": "Blocked",
   "lookup.not_blocked": "Not blocked",
-  "lookup.unknown": "The decision list could not be read — no statement possible.",
+  "lookup.unknown":
+    "The decision list could not be read — no statement possible.",
   "lookup.expires": "Comes free",
-  "lookup.remaining": "Remaining",
   "lookup.covered_by": "Covered by {ranges}",
   "lookup.covered_hint":
     "The address is not banned by name — it sits inside a banned range. That is why it does not appear in the ban table.",
@@ -139,8 +138,6 @@ export const EN = {
   "lookup.first_seen": "First seen",
   "lookup.last_seen": "Last seen",
   "lookup.scenarios": "Scenarios",
-  "lookup.unban": "Unban",
-  "lookup.unban_all": "Remove all decisions",
   "lookup.not_deletable":
     "Managed centrally — a local delete would be undone on the next pull.",
   "lookup.ban": "Ban",
@@ -170,7 +167,6 @@ const DE: Partial<Record<TranslationKey, string>> = {
   "status.expired": "abgelaufen",
   "status.all": "alle",
 
-
   "origin_label.manual": "manuell",
   "origin_label.blocklist": "Blockliste",
   "origin_label.unknown": "unbekannt",
@@ -193,7 +189,8 @@ const DE: Partial<Record<TranslationKey, string>> = {
   "action.confirm": "{target} entfernen?",
   "action.target_all": "Alle Entscheidungen für {ip}",
   "action.target_one": "Die Entscheidung „{type}“ für {ip}",
-  "action.blocked_expired": "Bereits abgelaufen — es ist nichts mehr zu entfernen.",
+  "action.blocked_expired":
+    "Bereits abgelaufen — es ist nichts mehr zu entfernen.",
   "action.blocked_remote":
     "Wird zentral verwaltet; ein lokales Löschen wäre beim nächsten Abgleich wieder rückgängig.",
 
@@ -271,22 +268,21 @@ const DE: Partial<Record<TranslationKey, string>> = {
   "lookup.checking": "Wird geprüft …",
   "lookup.blocked": "Gesperrt",
   "lookup.not_blocked": "Nicht gesperrt",
-  "lookup.unknown": "Die Decision-Liste konnte nicht gelesen werden — keine Aussage möglich.",
+  "lookup.unknown":
+    "Die Entscheidungsliste konnte nicht gelesen werden — keine Aussage möglich.",
   "lookup.expires": "Wird frei",
-  "lookup.remaining": "Restlaufzeit",
   "lookup.covered_by": "Abgedeckt durch {ranges}",
   "lookup.covered_hint":
     "Die Adresse ist nicht namentlich gesperrt — sie liegt in einem gesperrten Bereich. Deshalb taucht sie in der Ban-Tabelle nicht auf.",
-  "lookup.decisions": "Geltende Decisions",
+  "lookup.decisions": "Geltende Entscheidungen",
   "lookup.history": "Letzte 24 Stunden",
   "lookup.alerts": "{count} Alarme",
   "lookup.no_alerts": "Keine Alarme in den letzten 24 Stunden.",
-  "lookup.alerts_unavailable": "Die Alarm-Historie konnte nicht gelesen werden.",
+  "lookup.alerts_unavailable":
+    "Die Alarm-Historie konnte nicht gelesen werden.",
   "lookup.first_seen": "Zuerst gesehen",
   "lookup.last_seen": "Zuletzt gesehen",
   "lookup.scenarios": "Szenarien",
-  "lookup.unban": "Entsperren",
-  "lookup.unban_all": "Alle Decisions entfernen",
   "lookup.not_deletable":
     "Zentral verwaltet — ein lokales Löschen würde beim nächsten Abgleich rückgängig gemacht.",
   "lookup.ban": "Sperren",
@@ -301,7 +297,10 @@ const DE: Partial<Record<TranslationKey, string>> = {
   "editor.hide_ban": "Sperr-Bedienelemente ausblenden",
 };
 
-export const TRANSLATIONS: Record<string, Partial<Record<TranslationKey, string>>> = {
+export const TRANSLATIONS: Record<
+  string,
+  Partial<Record<TranslationKey, string>>
+> = {
   en: EN,
   de: DE,
 };

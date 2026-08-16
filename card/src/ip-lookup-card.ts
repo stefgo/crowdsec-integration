@@ -155,7 +155,11 @@ export class CrowdSecIpLookupCard extends LitElement {
     const t = this._t;
     const target = this._report?.target ?? this._query.trim();
     if (!this.hass || !this._entryId || !target) return;
-    if (!confirm(t("lookup.ban_confirm", { ip: target, duration: this._duration }))) {
+    if (
+      !confirm(
+        t("lookup.ban_confirm", { ip: target, duration: this._duration }),
+      )
+    ) {
       return;
     }
 
@@ -184,9 +188,11 @@ export class CrowdSecIpLookupCard extends LitElement {
   private async _unbanRow(row: Decision): Promise<void> {
     const t = this._t;
     if (!this.hass || !this._entryId || row.id === null) return;
-    if (!confirm(t("action.confirm", { target: `${row.type} ${row.value}` }))) {
-      return;
-    }
+    const target = t("action.target_one", {
+      type: row.type ?? "",
+      ip: row.value ?? "",
+    });
+    if (!confirm(t("action.confirm", { target }))) return;
 
     this._busy = true;
     this._error = null;
@@ -207,7 +213,13 @@ export class CrowdSecIpLookupCard extends LitElement {
     const t = this._t;
     const target = this._report?.target;
     if (!this.hass || !this._entryId || !target) return;
-    if (!confirm(t("action.confirm", { target: t("lookup.unban_all") }))) return;
+    if (
+      !confirm(
+        t("action.confirm", { target: t("action.target_all", { ip: target }) }),
+      )
+    ) {
+      return;
+    }
 
     this._busy = true;
     this._error = null;
@@ -238,25 +250,28 @@ export class CrowdSecIpLookupCard extends LitElement {
         <div class="card-header">
           <div class="title">${this._config.title ?? t("lookup.title")}</div>
           <div class="spacer"></div>
-          ${this._instances.length > 1
-            ? html`<div class="actions">
-                <select
-                  @change=${(event: Event) => {
+          ${
+            this._instances.length > 1
+              ? html`<div class="actions">
+                  <select
+                    @change=${(event: Event) => {
                     this._entryId = (event.target as HTMLSelectElement).value;
                     this._report = null;
                   }}
-                >
-                  ${this._instances.map(
-                    (instance) => html`<option
-                      value=${instance.config_entry_id}
-                      ?selected=${instance.config_entry_id === this._entryId}
-                    >
-                      ${instance.title}
-                    </option>`,
+                  >
+                    ${this._instances.map(
+                    (instance) =>
+                      html`<option
+                        value=${instance.config_entry_id}
+                        ?selected=${instance.config_entry_id === this._entryId}
+                      >
+                        ${instance.title}
+                      </option>`,
                   )}
-                </select>
-              </div>`
-            : nothing}
+                  </select>
+                </div>`
+              : nothing
+          }
         </div>
 
         <div class="query">
@@ -282,14 +297,19 @@ export class CrowdSecIpLookupCard extends LitElement {
         </div>
 
         ${this._error ? html`<div class="error">${this._error}</div>` : nothing}
-        ${this._notice
-          ? html`<div class="notice">
-              <span>${this._notice}</span>
-              <button class="text-button" @click=${() => (this._notice = null)}>
-                ${t("card.dismiss")}
-              </button>
-            </div>`
-          : nothing}
+        ${
+          this._notice
+            ? html`<div class="notice">
+                <span>${this._notice}</span>
+                <button
+                  class="text-button"
+                  @click=${() => (this._notice = null)}
+                >
+                  ${t("card.dismiss")}
+                </button>
+              </div>`
+            : nothing
+        }
         ${this._report ? this._renderReport(this._report) : nothing}
       </ha-card>
     `;
@@ -312,26 +332,32 @@ export class CrowdSecIpLookupCard extends LitElement {
         <span class="state ${report.blocked ? "blocked" : "clear"}">
           ${report.blocked ? t("lookup.blocked") : t("lookup.not_blocked")}
         </span>
-        ${report.blocked
-          ? html`<span class="sub">
-              ${formatRemaining(report.seconds_left, t)}${report.expires_at
-                ? html` · ${t("lookup.expires")}
+        ${
+          report.blocked
+            ? html`<span class="sub">
+                ${formatRemaining(report.seconds_left, t)}${
+                report.expires_at
+                  ? html` · ${t("lookup.expires")}
                     ${formatMoment(report.expires_at, this._locale, t)}`
-                : nothing}
-            </span>`
-          : nothing}
+                  : nothing
+              }
+              </span>`
+            : nothing
+        }
       </div>
 
-      ${report.covering_ranges.length
-        ? html`<div class="notice">
-            <span>
-              ${t("lookup.covered_by", {
+      ${
+        report.covering_ranges.length
+          ? html`<div class="notice">
+              <span>
+                ${t("lookup.covered_by", {
                 ranges: report.covering_ranges.join(", "),
               })}
-              — ${t("lookup.covered_hint")}
-            </span>
-          </div>`
-        : nothing}
+                — ${t("lookup.covered_hint")}
+              </span>
+            </div>`
+          : nothing
+      }
       ${report.decisions.length ? this._renderDecisions(report) : nothing}
       ${this._renderHistory(report)} ${this._renderActions(report)}
     `;
@@ -371,13 +397,15 @@ export class CrowdSecIpLookupCard extends LitElement {
           })}
         </td>
       </tr>
-      ${expanded
-        ? html`<tr class="details">
-            <td colspan=${COLUMN_COUNT}>
-              ${renderDetailGrid(row, this._t, this._locale)}
-            </td>
-          </tr>`
-        : nothing}
+      ${
+        expanded
+          ? html`<tr class="details">
+              <td colspan=${COLUMN_COUNT}>
+                ${renderDetailGrid(row, this._t, this._locale)}
+              </td>
+            </tr>`
+          : nothing
+      }
     `;
   }
 
@@ -425,9 +453,10 @@ export class CrowdSecIpLookupCard extends LitElement {
         ? ([[t("column.as"), report.as_name]] as [string, unknown][])
         : []),
       ...(report.scenarios.length
-        ? ([
-            [t("lookup.scenarios"), report.scenarios.join(", ")],
-          ] as [string, unknown][])
+        ? ([[t("lookup.scenarios"), report.scenarios.join(", ")]] as [
+            string,
+            unknown,
+          ][])
         : []),
     ];
 
@@ -436,10 +465,11 @@ export class CrowdSecIpLookupCard extends LitElement {
       <div class="history">
         <div class="detail-grid">
           ${entries.map(
-            ([label, value]) => html`<div class="detail">
-              <span class="label">${label}</span>
-              <span class="value">${value}</span>
-            </div>`,
+            ([label, value]) =>
+              html`<div class="detail">
+                <span class="label">${label}</span>
+                <span class="value">${value}</span>
+              </div>`,
           )}
         </div>
       </div>
@@ -451,46 +481,52 @@ export class CrowdSecIpLookupCard extends LitElement {
     const canUnban = report.blocked && report.deletable;
     return html`
       <div class="footer">
-        ${canUnban
-          ? html`<button
-              class="text-button danger"
-              ?disabled=${this._busy}
-              @click=${() => void this._unban()}
-            >
-              ${t("lookup.unban_all")}
-            </button>`
-          : nothing}
-        ${report.blocked && !report.deletable
-          ? html`<span class="hint">${t("lookup.not_deletable")}</span>`
-          : nothing}
+        ${
+          canUnban
+            ? html`<button
+                class="text-button danger"
+                ?disabled=${this._busy}
+                @click=${() => void this._unban()}
+              >
+                ${t("action.unban_all", { ip: report.target })}
+              </button>`
+            : nothing
+        }
+        ${
+          report.blocked && !report.deletable
+            ? html`<span class="hint">${t("lookup.not_deletable")}</span>`
+            : nothing
+        }
         <div class="spacer"></div>
-        ${this._config.hide_ban
-          ? nothing
-          : html`
-              <input
-                class="short"
-                aria-label=${t("lookup.ban_duration")}
-                .value=${this._duration}
-                @input=${(event: Event) => {
+        ${
+          this._config.hide_ban
+            ? nothing
+            : html`
+                <input
+                  class="short"
+                  aria-label=${t("lookup.ban_duration")}
+                  .value=${this._duration}
+                  @input=${(event: Event) => {
                   this._duration = (event.target as HTMLInputElement).value;
                 }}
-              />
-              <input
-                class="reason"
-                aria-label=${t("lookup.ban_reason")}
-                .value=${this._reason}
-                @input=${(event: Event) => {
+                />
+                <input
+                  class="reason"
+                  aria-label=${t("lookup.ban_reason")}
+                  .value=${this._reason}
+                  @input=${(event: Event) => {
                   this._reason = (event.target as HTMLInputElement).value;
                 }}
-              />
-              <button
-                class="text-button"
-                ?disabled=${this._busy}
-                @click=${() => void this._ban()}
-              >
-                ${this._busy ? t("lookup.banning") : t("lookup.ban")}
-              </button>
-            `}
+                />
+                <button
+                  class="text-button"
+                  ?disabled=${this._busy}
+                  @click=${() => void this._ban()}
+                >
+                  ${this._busy ? t("lookup.banning") : t("lookup.ban")}
+                </button>
+              `
+        }
       </div>
     `;
   }
@@ -525,7 +561,7 @@ export class CrowdSecIpLookupCard extends LitElement {
         border-top: 1px solid var(--divider-color);
       }
       .address {
-        font-size: 15px;
+        font-size: 13px;
       }
       .state {
         font-size: 13px;
@@ -541,7 +577,7 @@ export class CrowdSecIpLookupCard extends LitElement {
         color: var(--warning-color);
       }
       .sub {
-        font-size: 12px;
+        font-size: 13px;
         color: var(--secondary-text-color);
       }
 
