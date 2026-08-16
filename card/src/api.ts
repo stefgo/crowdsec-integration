@@ -5,6 +5,7 @@ import type {
   DecisionsResponse,
   HomeAssistant,
   Instance,
+  IpReport,
 } from "./types";
 
 export const DOMAIN = "crowdsec";
@@ -95,4 +96,38 @@ export const deleteForIp = (
     type: `${DOMAIN}/decisions/delete`,
     config_entry_id: configEntryId,
     ip,
+  });
+
+/**
+ * Everything the instance knows about one address or range.
+ *
+ * Deliberately a request of its own rather than a filter over the table: the
+ * table is limited to the configured scope and cannot show a range covering
+ * the address, which is the whole reason this exists.
+ */
+export const lookupIp = (
+  hass: HomeAssistant,
+  configEntryId: string,
+  ip: string,
+): Promise<IpReport> =>
+  hass.connection.sendMessagePromise<IpReport>({
+    type: `${DOMAIN}/ip/lookup`,
+    config_entry_id: configEntryId,
+    ip,
+  });
+
+/** Ban an address; the answer is the fresh report for it. */
+export const banIp = (
+  hass: HomeAssistant,
+  configEntryId: string,
+  ip: string,
+  duration: string,
+  reason: string,
+): Promise<IpReport> =>
+  hass.connection.sendMessagePromise<IpReport>({
+    type: `${DOMAIN}/ip/ban`,
+    config_entry_id: configEntryId,
+    ip,
+    duration,
+    reason,
   });

@@ -393,6 +393,24 @@ class CrowdSecClient:
             key = alert_id(alert) or f"anon:{len(target)}:{index}"
             target.setdefault(key, alert)
 
+    async def async_lookup_alerts(
+        self, target: str, since: str = ALERTS_SINCE, limit: int = 50
+    ) -> list[dict[str, Any]]:
+        """The recent alerts for one address or range.
+
+        Context for the lookup: an address can be unknown to the decision list
+        and still have shown up twenty times in the last day. A small limit is
+        deliberate — what is wanted is "what did it do", not a full export.
+        """
+        key = "range" if "/" in target else "ip"
+        params = {key: target, "since": since, "limit": str(limit)}
+        data = await self._async_lapi_request("GET", "/v1/alerts", params)
+        if not data:
+            return []
+        if not isinstance(data, list):
+            raise CrowdSecConnectionError("LAPI /v1/alerts did not return an array")
+        return [alert for alert in data if isinstance(alert, dict)]
+
     # -- Creating and deleting decisions ----------------------------------
 
     async def async_ban_ip(
@@ -475,6 +493,31 @@ class CrowdSecClient:
         handful the card can actually act on.
         """
         params = {"origins": ",".join(origins)} if origins else None
+        return await self._async_decisions(params)
+
+    async def async_lookup_ip(self, target: str) -> list[dict[str, Any]] | None:
+        """Every decision that applies to one address or range.
+
+        This is the one question the ban table cannot answer. It lists what is
+        enforced; it cannot show that an address is covered by a ``/24`` from a
+        blocklist, because that row is about the range, not about the address
+        somebody is asking about. ``contains`` is exactly that lookup — and
+        unlike the list, it goes to *all* origins regardless of the configured
+        scope, since here the point is to find out whether this address is
+        blocked at all.
+        """
+        key = "range" if "/" in target else "ip"
+        return await self._async_decisions({key: target, "contains": "true"})
+
+    async def _async_decisions(
+        self, params: dict[str, str] | None
+    ) -> list[dict[str, Any]] | None:
+        """A decision query with the full fallback chain.
+
+        The machine token is asked first — it is always configured, whereas the
+        bouncer key is optional. Only if the LAPI denies the route to a machine
+        does the bouncer key take over.
+        """
         try:
             data = await self._async_lapi_request(
                 "GET",
@@ -489,7 +532,7 @@ class CrowdSecClient:
                     "LAPI denies /v1/decisions to the machine token — using "
                     "the bouncer key instead"
                 )
-                return await self._async_bouncer_decisions(origins)
+                return await self._async_bouncer_decisions(params)
             # A valid token that is refused on this one route says something
             # about the CrowdSec version, not about the credentials. Treating
             # it as an outage would mark the whole instance unreachable over a
@@ -507,7 +550,7 @@ class CrowdSecClient:
             if self._bouncer_api_key is None:
                 self.decisions_need_bouncer_key = True
                 return None
-            return await self._async_bouncer_decisions(origins)
+            return await self._async_bouncer_decisions(params)
 
         self.decisions_need_bouncer_key = False
         if not isinstance(data, list):
@@ -515,7 +558,7 @@ class CrowdSecClient:
         return [item for item in data if isinstance(item, dict)]
 
     async def _async_bouncer_decisions(
-        self, origins: Sequence[str] | None = None
+        self, params: dict[str, str] | None = None
     ) -> list[dict[str, Any]] | None:
         """The decision list via the bouncer API."""
         if self._bouncer_api_key is None:
@@ -523,7 +566,7 @@ class CrowdSecClient:
         try:
             async with self._session.get(
                 f"{self._lapi_url}/v1/decisions",
-                params={"origins": ",".join(origins)} if origins else None,
+                params=params,
                 headers={**self._headers, "X-Api-Key": self._bouncer_api_key},
                 ssl=self._ssl,
                 timeout=self._timeout,

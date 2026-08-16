@@ -129,6 +129,10 @@ CARD_URL_PATH = f"/{DOMAIN}_static"
 WS_DECISIONS_LIST = f"{DOMAIN}/decisions/list"
 WS_DECISIONS_DELETE = f"{DOMAIN}/decisions/delete"
 WS_INSTANCES = f"{DOMAIN}/instances"
+# The lookup card: one address, checked against every source, and the
+# counterpart that puts a ban there.
+WS_IP_LOOKUP = f"{DOMAIN}/ip/lookup"
+WS_IP_BAN = f"{DOMAIN}/ip/ban"
 
 # --- Repair issues --------------------------------------------------------
 ISSUE_ALERTS_TRUNCATED = "alerts_truncated"

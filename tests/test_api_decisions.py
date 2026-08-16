@@ -219,7 +219,7 @@ def test_origins_are_passed_to_the_lapi():
     assert calls == [("GET", "/v1/decisions", {"origins": "cscli,crowdsec"})]
 
 
-def test_origins_survive_the_fallback_to_the_bouncer_key():
+def test_the_filter_survives_the_fallback_to_the_bouncer_key():
     """The fallback path must not quietly fetch everything again."""
     seen: list = []
 
@@ -229,8 +229,8 @@ def test_origins_survive_the_fallback_to_the_bouncer_key():
         async def fake_request(*args, **kwargs):
             raise CrowdSecAuthError("denied", "decisions")
 
-        async def fake_bouncer(origins=None):
-            seen.append(origins)
+        async def fake_bouncer(params=None):
+            seen.append(params)
             return [DECISION]
 
         client._async_lapi_request = fake_request  # type: ignore[assignment]
@@ -238,4 +238,81 @@ def test_origins_survive_the_fallback_to_the_bouncer_key():
         return await client.async_get_decisions(("cscli",))
 
     assert run(scenario) == [DECISION]
-    assert seen == [("cscli",)]
+    assert seen == [{"origins": "cscli"}]
+
+
+# -- Looking one address up -------------------------------------------------
+
+
+def test_a_lookup_asks_for_everything_covering_the_address():
+    """contains=true is what finds the /24 an address sits in."""
+    calls: list[tuple] = []
+
+    async def scenario():
+        client = build_client()
+
+        async def fake_request(method, path, params=None, *args, **kwargs):
+            calls.append((method, path, params))
+            return [DECISION]
+
+        client._async_lapi_request = fake_request  # type: ignore[assignment]
+        return await client.async_lookup_ip("192.0.2.1")
+
+    assert run(scenario) == [DECISION]
+    assert calls == [("GET", "/v1/decisions", {"ip": "192.0.2.1", "contains": "true"})]
+
+
+def test_a_range_is_looked_up_as_a_range():
+    """The LAPI has its own parameter for it; ip= would not match."""
+    calls: list[tuple] = []
+
+    async def scenario():
+        client = build_client()
+
+        async def fake_request(method, path, params=None, *args, **kwargs):
+            calls.append((method, path, params))
+            return []
+
+        client._async_lapi_request = fake_request  # type: ignore[assignment]
+        return await client.async_lookup_ip("10.0.0.0/24")
+
+    assert run(scenario) == []
+    assert calls[0][2] == {"range": "10.0.0.0/24", "contains": "true"}
+
+
+def test_a_lookup_ignores_the_configured_scope():
+    """The question is whether the address is blocked at all, by anyone."""
+    calls: list[tuple] = []
+
+    async def scenario():
+        client = build_client()
+
+        async def fake_request(method, path, params=None, *args, **kwargs):
+            calls.append(params)
+            return []
+
+        client._async_lapi_request = fake_request  # type: ignore[assignment]
+        await client.async_lookup_ip("192.0.2.1")
+
+    run(scenario)
+    assert "origins" not in calls[0]
+
+
+def test_the_alert_lookup_carries_the_window_and_a_small_limit():
+    calls: list[tuple] = []
+
+    async def scenario():
+        client = build_client()
+
+        async def fake_request(method, path, params=None, *args, **kwargs):
+            calls.append((method, path, params))
+            return [{"id": 1}]
+
+        client._async_lapi_request = fake_request  # type: ignore[assignment]
+        return await client.async_lookup_alerts("192.0.2.1")
+
+    assert run(scenario) == [{"id": 1}]
+    method, path, params = calls[0]
+    assert (method, path) == ("GET", "/v1/alerts")
+    assert params["ip"] == "192.0.2.1"
+    assert params["limit"] == "50"

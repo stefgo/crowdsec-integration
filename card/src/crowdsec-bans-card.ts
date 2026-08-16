@@ -11,6 +11,8 @@ import { LitElement, PropertyValues, css, html, nothing } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
 
 import "./editor";
+// Both cards travel in the one bundle the integration serves.
+import "./ip-lookup-card";
 import {
   deleteDecision,
   deleteForIp,
@@ -931,6 +933,15 @@ window.customCards.push({
   name: "CrowdSec Bans",
   description:
     "Active CrowdSec decisions with search, filters and one-click unban",
+  preview: false,
+  documentationURL: "https://github.com/stefgo/ha-crowdsec-integration",
+});
+window.customCards.push({
+  type: "crowdsec-ip-lookup-card",
+  name: "CrowdSec IP Lookup",
+  description:
+    "Check one address against every source — local, CAPI and blocklists, " +
+    "including a range containing it — and ban or unban it",
   preview: false,
   documentationURL: "https://github.com/stefgo/ha-crowdsec-integration",
 });

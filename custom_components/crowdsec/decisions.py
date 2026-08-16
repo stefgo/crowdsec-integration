@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Iterable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -408,3 +408,122 @@ def build_table(
 
     rows.sort(key=order)
     return rows
+
+
+@dataclass(slots=True)
+class IpReport:
+    """What is known about one address, for the lookup card.
+
+    The table answers "what is CrowdSec enforcing"; this answers "what does
+    CrowdSec have on *this* address". The two differ in a way that matters:
+    an address can be blocked by a range it sits inside, and that row is about
+    the range, so scanning the table for the address finds nothing.
+    """
+
+    target: str
+    # Everything currently in force for the address, whatever its origin.
+    decisions: list[DecisionRecord] = field(default_factory=list)
+    blocked: bool = False
+    # The decision that keeps the address blocked the longest — the one that
+    # actually determines when it comes free again.
+    expires_at: datetime | None = None
+    seconds_left: float | None = None
+    # Set when a decision covers the address through a range rather than
+    # naming it. Without this the card would show a row whose value is not
+    # what was searched for and leave the reader guessing.
+    covering_ranges: list[str] = field(default_factory=list)
+    # Whether anything here can be lifted from Home Assistant at all.
+    deletable: bool = False
+
+    alerts: int = 0
+    first_seen: datetime | None = None
+    last_seen: datetime | None = None
+    scenarios: list[str] = field(default_factory=list)
+    country: str | None = None
+    as_name: str | None = None
+    # The alert query is allowed to fail on its own — the decisions are the
+    # answer, the history is the context.
+    alerts_available: bool = True
+
+    def as_dict(self) -> dict[str, Any]:
+        """JSON-serialisable form for the WebSocket answer."""
+        return {
+            "target": self.target,
+            "decisions": [record.as_dict() for record in self.decisions],
+            "blocked": self.blocked,
+            "expires_at": self.expires_at.isoformat() if self.expires_at else None,
+            "seconds_left": (
+                None if self.seconds_left is None else round(self.seconds_left)
+            ),
+            "covering_ranges": self.covering_ranges,
+            "deletable": self.deletable,
+            "alerts": self.alerts,
+            "first_seen": self.first_seen.isoformat() if self.first_seen else None,
+            "last_seen": self.last_seen.isoformat() if self.last_seen else None,
+            "scenarios": self.scenarios,
+            "country": self.country,
+            "as_name": self.as_name,
+            "alerts_available": self.alerts_available,
+        }
+
+
+def build_ip_report(
+    target: str,
+    raw_decisions: Iterable[Any],
+    alerts: Iterable[dict[str, Any]],
+    now: datetime | None = None,
+    alerts_available: bool = True,
+) -> IpReport:
+    """Merge the two lookup queries into one answer about an address."""
+    moment = now or datetime.now(UTC)
+    alert_list = [alert for alert in alerts if isinstance(alert, dict)]
+
+    index = build_source_index(alert_list)
+    records = normalize_decisions(raw_decisions, moment, index)
+    # Expired rows can come back from the LAPI; for "is this blocked right
+    # now" they are noise.
+    active = [record for record in records if record.status == DECISION_STATUS_ACTIVE]
+    active.sort(key=lambda record: -(record.seconds_left or float("-inf")))
+
+    report = IpReport(
+        target=target,
+        decisions=active,
+        blocked=bool(active),
+        deletable=any(record.deletable for record in active),
+        alerts_available=alerts_available,
+    )
+
+    if active:
+        longest = active[0]
+        report.expires_at = longest.until
+        report.seconds_left = longest.seconds_left
+        report.covering_ranges = [
+            record.value
+            for record in active
+            if record.value is not None and record.value != target
+        ]
+
+    scenarios: list[str] = []
+    for alert in alert_list:
+        if alert.get("simulated"):
+            continue
+        report.alerts += 1
+
+        created = alert_timestamp(alert)
+        if created is not None:
+            if report.first_seen is None or created < report.first_seen:
+                report.first_seen = created
+            if report.last_seen is None or created > report.last_seen:
+                report.last_seen = created
+
+        scenario = _text(alert.get("scenario"))
+        if scenario is not None and scenario not in scenarios:
+            scenarios.append(scenario)
+        # The most recent alert wins — an address can move networks.
+        if report.country is None:
+            report.country = _source_field(alert, "cn")
+        if report.as_name is None:
+            report.as_name = _source_field(alert, "as_name")
+
+    report.scenarios = scenarios
+    return report

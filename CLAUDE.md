@@ -63,10 +63,12 @@ websocket / diagnostics.
   HA-free — the tests import them without Home Assistant installed.
 - **`entity.py` / `sensor.py` / `binary_sensor.py`** — `CrowdSecEntity` binds every entity
   to the entry's device; platforms are description-driven over `CrowdSecData`.
-- **`websocket_api.py`** — `crowdsec/decisions/list|delete` and `crowdsec/instances`. The
-  card uses these instead of entity attributes: a ban table would blow past attribute size
-  limits and end up in the recorder. Admin-only; deletes are restricted to local-origin
-  decisions.
+- **`websocket_api.py`** — `crowdsec/decisions/list|delete`, `crowdsec/instances` and
+  `crowdsec/ip/lookup|ban`. The cards use these instead of entity attributes: a ban table
+  would blow past attribute size limits and end up in the recorder. Admin-only; deletes
+  are restricted to local-origin decisions. The two `ip/*` commands go to the LAPI live
+  rather than reading the coordinator's data — see the lookup note under "Things that
+  bite".
 - **`services.py` / `services.yaml`** — `ban_ip`, `unban_ip`, `refresh`, all targeting a
   `config_entry_id`.
 - **`config_flow.py`** — setup, reauth, reconfigure and options. `build_unique_id()` is
@@ -88,6 +90,11 @@ websocket / diagnostics.
   cache each cycle with the same `summarize_alerts`, so nothing about the evaluation
   changed. `alerts_truncated` is remembered rather than recomputed — a truncated
   increment means alerts were missed and only a full query can clear it.
+- **The lookup is not the table.** `crowdsec/ip/lookup` queries `/v1/decisions` with
+  `ip=`/`range=` plus `contains=true`, which is what finds a range covering the address —
+  the one thing the table structurally cannot show, since that row is about the range.
+  It deliberately ignores `decisions_scope`: the scope decides what is *listed*, while
+  the lookup answers whether an address is blocked at all. `origins` is *not* sent here.
 - **`decisions_scope` defaults to `local`.** The LAPI query then carries an `origins`
   filter and `active_decisions` comes from the metric instead of the list length —
   counting a filtered list would silently drop the CAPI and blocklist bans. The table
@@ -111,12 +118,19 @@ websocket / diagnostics.
 - On a failed scrape the measured values go `unavailable` rather than being carried
   forward; `last_update` / `last_restart` / `last_alert` deliberately survive.
 
-### Card
+### Cards
 
-`card/src/crowdsec-bans-card.ts` is the element; `filters.ts` (search/filter/sort) and
-`localize.ts` (DE/EN) hold the logic that vitest covers. `editor.ts` is the visual editor.
-Rollup writes straight into `custom_components/crowdsec/www/` — the built file is **not
-committed**; HACS installs get it from the release zip.
+Two elements in **one bundle**: `crowdsec-bans-card.ts` is the rollup entry point and
+imports `ip-lookup-card.ts`, so both are defined by the single file the integration
+serves. Adding a third card means importing it there too, plus a `window.customCards`
+entry.
+
+`filters.ts` (search/filter/sort), `localize.ts` (DE/EN) and `api.ts` (including the
+paging of `fetchAllDecisions`) hold the logic that vitest covers; the elements themselves
+are not unit-tested, since the card setup has no DOM environment. `editor.ts` and
+`ip-lookup-editor.ts` are the visual editors. Rollup writes straight into
+`custom_components/crowdsec/www/` — the built file is **not committed**; HACS installs
+get it from the release zip.
 
 ## Testing
 

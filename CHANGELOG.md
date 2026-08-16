@@ -12,6 +12,12 @@ without one.
 
 ### Added
 
+- **Lookup card** (`custom:crowdsec-ip-lookup-card`): checks one address or
+  range against every source — local decisions, CAPI and blocklists — and
+  finds a range that contains it, which the ban table structurally cannot
+  show. Includes the 24 h alert history for the address, plus ban and unban.
+  It queries live and ignores `decisions_scope`, because the question is
+  whether the address is blocked at all.
 - Reconfigure flow: addresses and credentials of an existing instance can be
   changed in place instead of deleting the entry and setting it up again.
   Leaving a secret field empty keeps the stored value.

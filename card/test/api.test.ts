@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { PAGE_SIZE, fetchAllDecisions } from "../src/api";
+import { PAGE_SIZE, banIp, fetchAllDecisions, lookupIp } from "../src/api";
 import type { Decision, DecisionsResponse, HomeAssistant } from "../src/types";
 
 const decision = (index: number): Decision =>
@@ -85,5 +85,44 @@ describe("fetchAllDecisions", () => {
 
     const result = await fetchAllDecisions(hass, "entry");
     expect(result.decisions).toHaveLength(0);
+  });
+});
+
+describe("lookup and ban", () => {
+  const capture = () => {
+    const sent: Record<string, unknown>[] = [];
+    const hass = {
+      connection: {
+        sendMessagePromise: async <T,>(message: Record<string, unknown>) => {
+          sent.push(message);
+          return { target: message.ip, blocked: false } as unknown as T;
+        },
+      },
+    } as HomeAssistant;
+    return { hass, sent };
+  };
+
+  it("asks the lookup command for one address", async () => {
+    const { hass, sent } = capture();
+    await lookupIp(hass, "entry", "192.0.2.10");
+
+    expect(sent[0]).toEqual({
+      type: "crowdsec/ip/lookup",
+      config_entry_id: "entry",
+      ip: "192.0.2.10",
+    });
+  });
+
+  it("sends duration and reason with a ban", async () => {
+    const { hass, sent } = capture();
+    await banIp(hass, "entry", "192.0.2.10", "2h", "Because");
+
+    expect(sent[0]).toEqual({
+      type: "crowdsec/ip/ban",
+      config_entry_id: "entry",
+      ip: "192.0.2.10",
+      duration: "2h",
+      reason: "Because",
+    });
   });
 });

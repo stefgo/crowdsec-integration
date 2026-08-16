@@ -132,6 +132,15 @@ class FakeClient:
         # The real client sets this when a bouncer key would be the way
         # out of an unreadable decision list.
         self.decisions_need_bouncer_key = False
+        # The lookup path is separate from the table: it goes to the LAPI
+        # per request and ignores the configured scope.
+        self.lookup_decisions: list[dict[str, Any]] | None = []
+        self.lookup_alerts: list[dict[str, Any]] = []
+        self.lookup_queries: list[str] = []
+        self.lookup_error: Exception | None = None
+        self.lookup_alerts_error: Exception | None = None
+        self.bans: list[tuple[str, str, str]] = []
+        self.ban_error: Exception | None = None
         self._AlertResult = AlertResult
 
     async def async_get_metrics(self) -> MetricSet:
@@ -151,7 +160,21 @@ class FakeClient:
             raise self.decisions_error
         return None if self.decisions is None else list(self.decisions)
 
+    async def async_lookup_ip(self, target):
+        self.lookup_queries.append(target)
+        if self.lookup_error:
+            raise self.lookup_error
+        return None if self.lookup_decisions is None else list(self.lookup_decisions)
+
+    async def async_lookup_alerts(self, target, since="24h", limit=50):
+        if self.lookup_alerts_error:
+            raise self.lookup_alerts_error
+        return list(self.lookup_alerts)
+
     async def async_ban_ip(self, ip, duration, reason):
+        self.bans.append((ip, duration, reason))
+        if self.ban_error:
+            raise self.ban_error
         return None
 
     async def async_unban_ip(self, ip):

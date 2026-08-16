@@ -43,6 +43,47 @@ export interface DecisionsResponse {
   last_update: string | null;
 }
 
+/** The answer of the lookup command — one address, every source. */
+export interface IpReport {
+  target: string;
+  /** Everything currently in force for the address, whatever its origin. */
+  decisions: Decision[];
+  blocked: boolean;
+  expires_at: string | null;
+  seconds_left: number | null;
+  /**
+   * Set when a decision covers the address through a range rather than naming
+   * it — the case the ban table structurally cannot show.
+   */
+  covering_ranges: string[];
+  /** Whether anything found here can be lifted from Home Assistant. */
+  deletable: boolean;
+  alerts: number;
+  first_seen: string | null;
+  last_seen: string | null;
+  scenarios: string[];
+  country: string | null;
+  as_name: string | null;
+  /** False when the alert history could not be read; the decisions still can. */
+  alerts_available: boolean;
+  /** False when the decision route itself is closed — then "not blocked"
+   *  would be a lie, and the card says so instead. */
+  decisions_available?: boolean;
+}
+
+export interface CrowdSecIpLookupCardConfig {
+  type: string;
+  title?: string;
+  /** Which instance to query. Omitted means the first configured one. */
+  config_entry_id?: string;
+  /** Prefilled ban duration in the ban row. */
+  ban_duration?: string;
+  /** Prefilled ban reason. */
+  ban_reason?: string;
+  /** Hide the ban controls — lookup only. */
+  hide_ban?: boolean;
+}
+
 export interface Instance {
   config_entry_id: string;
   title: string;

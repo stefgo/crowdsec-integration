@@ -8,6 +8,7 @@ machine and recorded by the recorder, none of which a ban list wants.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any
 
@@ -18,14 +19,19 @@ from homeassistant.core import HomeAssistant, callback
 
 from .api import CrowdSecAuthError, CrowdSecConnectionError
 from .const import (
+    DEFAULT_BAN_DURATION,
+    DEFAULT_BAN_REASON,
     DOMAIN,
     ORIGIN_KIND_LOCAL,
     WS_DECISIONS_DELETE,
     WS_DECISIONS_LIST,
     WS_INSTANCES,
+    WS_IP_BAN,
+    WS_IP_LOOKUP,
 )
 from .coordinator import CrowdSecCoordinator
-from .validation import normalize_ip_target
+from .decisions import build_ip_report
+from .validation import normalize_ban_duration, normalize_ip_target
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -42,6 +48,8 @@ def async_register_websocket_api(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, ws_instances)
     websocket_api.async_register_command(hass, ws_decisions_list)
     websocket_api.async_register_command(hass, ws_decisions_delete)
+    websocket_api.async_register_command(hass, ws_ip_lookup)
+    websocket_api.async_register_command(hass, ws_ip_ban)
 
 
 @callback
@@ -260,3 +268,119 @@ async def ws_decisions_delete(
             "offset": 0,
         },
     )
+
+
+# -- Looking up a single address --------------------------------------------
+
+
+@websocket_api.require_admin
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): WS_IP_LOOKUP,
+        vol.Required("config_entry_id"): str,
+        vol.Required("ip"): str,
+    }
+)
+@websocket_api.async_response
+async def ws_ip_lookup(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Everything the instance knows about one address or range.
+
+    Deliberately not served from the coordinator's data: that is the table,
+    which is filtered by the configured scope and cannot show a range covering
+    the address. This asks the LAPI directly, and only when someone asks.
+    """
+    coordinator = _coordinator(hass, connection, msg)
+    if coordinator is None:
+        return
+
+    try:
+        target = normalize_ip_target(msg["ip"])
+    except ValueError as err:
+        connection.send_error(msg["id"], "invalid_target", str(err))
+        return
+
+    decisions, alerts = await asyncio.gather(
+        coordinator.client.async_lookup_ip(target),
+        coordinator.client.async_lookup_alerts(target),
+        return_exceptions=True,
+    )
+
+    if isinstance(decisions, BaseException):
+        if not isinstance(decisions, (CrowdSecAuthError, CrowdSecConnectionError)):
+            raise decisions
+        connection.send_error(msg["id"], "request_failed", str(decisions))
+        return
+
+    # The history is context, not the answer — losing it must not lose the
+    # decisions with it, but the card has to know it is missing.
+    alerts_available = not isinstance(alerts, BaseException)
+    if not alerts_available:
+        if not isinstance(alerts, (CrowdSecAuthError, CrowdSecConnectionError)):
+            raise alerts
+        _LOGGER.debug("Alert lookup for %s failed: %s", target, alerts)
+
+    report = build_ip_report(
+        target,
+        decisions or [],
+        alerts if alerts_available else [],
+        alerts_available=alerts_available,
+    )
+    # None means the decision route itself is closed — "not blocked" would be
+    # a lie in that case.
+    result = report.as_dict()
+    result["decisions_available"] = decisions is not None
+    connection.send_result(msg["id"], result)
+
+
+@websocket_api.require_admin
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): WS_IP_BAN,
+        vol.Required("config_entry_id"): str,
+        vol.Required("ip"): str,
+        vol.Optional("duration", default=DEFAULT_BAN_DURATION): str,
+        vol.Optional("reason", default=DEFAULT_BAN_REASON): str,
+    }
+)
+@websocket_api.async_response
+async def ws_ip_ban(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Ban an address from the card, the same way the service does."""
+    coordinator = _coordinator(hass, connection, msg)
+    if coordinator is None:
+        return
+
+    try:
+        target = normalize_ip_target(msg["ip"])
+    except ValueError as err:
+        connection.send_error(msg["id"], "invalid_target", str(err))
+        return
+    try:
+        duration = normalize_ban_duration(msg["duration"])
+    except ValueError as err:
+        connection.send_error(msg["id"], "invalid_duration", str(err))
+        return
+
+    reason = str(msg["reason"]).strip() or DEFAULT_BAN_REASON
+    try:
+        await coordinator.client.async_ban_ip(target, duration, reason)
+    except (CrowdSecAuthError, CrowdSecConnectionError) as err:
+        connection.send_error(msg["id"], "request_failed", str(err))
+        return
+
+    _LOGGER.info("Banned %s for %s via the card (%s)", target, duration, reason)
+    await coordinator.async_request_refresh()
+
+    # The fresh state comes straight back, so the card can show the result of
+    # the click without a second round trip.
+    decisions = await coordinator.client.async_lookup_ip(target)
+    alerts = await coordinator.client.async_lookup_alerts(target)
+    report = build_ip_report(target, decisions or [], alerts)
+    connection.send_result(msg["id"], report.as_dict())

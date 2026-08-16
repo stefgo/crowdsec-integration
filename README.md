@@ -174,6 +174,67 @@ because they decide what is fetched in the first place (see
 * **Full alert refresh** — how current the expired 24 h history is. The active
   decisions come from the polling cycle either way.
 
+## Lookup card: is this address blocked?
+
+The ban table answers "what is CrowdSec enforcing". It cannot answer "is
+`192.0.2.10` blocked" — because an address caught by a `/24` from a blocklist
+appears nowhere in it: that row is about the range. Scanning the table for the
+address finds nothing, and the address is blocked all the same.
+
+The second card asks that question directly. It appears in the card picker as
+**CrowdSec IP Lookup** (`custom:crowdsec-ip-lookup-card`).
+
+Type an address or a CIDR range, press *Check*, and the card asks the LAPI with
+`contains`, which is exactly the "what covers this" lookup. The answer is one
+request, made only when you ask:
+
+* **the verdict** — blocked or not, and when it comes free again, taken from
+  whichever decision runs longest;
+* **the covering range**, called out separately when the address is not banned
+  by name. This is the finding the table cannot show, so it gets its own block
+  rather than a footnote;
+* **every decision in force**, with origin — including CAPI and blocklists;
+* **the last 24 hours** from the alerts: how often, since when, country, AS and
+  the scenarios. An address can be unknown to the decision list and still have
+  shown up twenty times today.
+
+Two things are deliberately different from the table:
+
+* The lookup **ignores the `decisions_scope` option**. That option decides what
+  is listed; here the question is whether the address is blocked *at all*, so
+  every origin is queried regardless.
+* It reads **live**, not from the polling cycle. Nothing is cached — a lookup
+  costs one request and always shows the current state.
+
+**Ban and unban** sit below the answer. *Ban* takes a duration and a reason,
+prefilled from the card configuration, and confirms before acting; the fresh
+result comes straight back, so the click shows its own effect. *Remove all
+decisions* appears only when something local is actually there to remove — a
+decision from the CAPI or a blocklist has no button and says why. After an
+unban the card asks again instead of trusting the delete count: a covering
+range can still be in force once the address's own ban is gone.
+
+Only administrators can use the card.
+
+### Options
+
+| Option | Type | Default | What it does |
+| --- | --- | --- | --- |
+| `type` | string | — | `custom:crowdsec-ip-lookup-card`. Required. |
+| `title` | string | localised | Heading of the card. |
+| `config_entry_id` | string | first instance | Which instance to query. As with the ban card, a picker appears when several are configured. |
+| `ban_duration` | string | `4h` | Prefills the duration field. Go syntax, so `30m`, `4h` or `1h30m`; CrowdSec has no day unit, use `168h` for a week. |
+| `ban_reason` | string | `Home Assistant` | Prefills the reason field. It ends up in the scenario of the decision CrowdSec creates. |
+| `hide_ban` | boolean | `false` | Hides the ban controls. Unban stays available — for a dashboard where looking up and lifting is wanted but creating bans is not. |
+
+```yaml
+type: custom:crowdsec-ip-lookup-card
+title: Check an address
+ban_duration: 24h
+ban_reason: Blocked from Home Assistant
+hide_ban: false
+```
+
 ## Push and badge on iOS/iPadOS
 
 A ready-made package for the Home Assistant companion app is available at
