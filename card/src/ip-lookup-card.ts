@@ -359,7 +359,8 @@ export class CrowdSecIpLookupCard extends LitElement {
           : nothing
       }
       ${report.decisions.length ? this._renderDecisions(report) : nothing}
-      ${this._renderHistory(report)} ${this._renderActions(report)}
+      ${this._renderUnban(report)} ${this._renderHistory(report)}
+      ${this._renderBan(report)}
     `;
   }
 
@@ -476,66 +477,68 @@ export class CrowdSecIpLookupCard extends LitElement {
     `;
   }
 
-  private _renderActions(report: IpReport) {
+  /**
+   * Removing the decisions, directly under the table that lists them.
+   *
+   * It acts on exactly those rows, so it belongs to them and not to the
+   * card's foot, where the history would sit between the two.
+   */
+  private _renderUnban(report: IpReport) {
     const t = this._t;
-    const canUnban = report.blocked && report.deletable;
+    if (!report.blocked) return nothing;
     return html`
-      <div class="footer">
-        ${
-          canUnban
-            ? html`<div class="footer-row">
-                <button
+      <div class="footer table-actions">
+        <div class="footer-row">
+          ${
+            report.deletable
+              ? html`<button
                   class="text-button danger"
                   ?disabled=${this._busy}
                   @click=${() => void this._unban()}
                 >
                   ${t("action.unban_all", { ip: report.target })}
-                </button>
-              </div>`
-            : nothing
-        }
-        ${
-          report.blocked && !report.deletable
-            ? html`<div class="footer-row">
-                <span class="hint">${t("lookup.not_deletable")}</span>
-              </div>`
-            : nothing
-        }
-        ${
-          this._config.hide_ban
-            ? nothing
-            : html`
-                <div class="footer-row">
-                  <button
-                    class="text-button danger"
-                    ?disabled=${this._busy}
-                    @click=${() => void this._ban()}
-                  >
-                    ${
+                </button>`
+              : html`<span class="hint">${t("lookup.not_deletable")}</span>`
+          }
+        </div>
+      </div>
+    `;
+  }
+
+  private _renderBan(report: IpReport) {
+    const t = this._t;
+    if (this._config.hide_ban) return nothing;
+    return html`
+      <div class="footer">
+        <div class="footer-row">
+          <button
+            class="text-button danger"
+            ?disabled=${this._busy}
+            @click=${() => void this._ban()}
+          >
+            ${
                       this._busy
                         ? t("lookup.banning")
                         : t("lookup.ban", { ip: report.target })
                     }
-                  </button>
-                  <input
-                    class="short"
-                    aria-label=${t("lookup.ban_duration")}
-                    .value=${this._duration}
-                    @input=${(event: Event) => {
+          </button>
+          <input
+            class="short"
+            aria-label=${t("lookup.ban_duration")}
+            .value=${this._duration}
+            @input=${(event: Event) => {
                       this._duration = (event.target as HTMLInputElement).value;
                     }}
-                  />
-                  <input
-                    class="reason"
-                    aria-label=${t("lookup.ban_reason")}
-                    .value=${this._reason}
-                    @input=${(event: Event) => {
+          />
+          <input
+            class="reason"
+            aria-label=${t("lookup.ban_reason")}
+            .value=${this._reason}
+            @input=${(event: Event) => {
                       this._reason = (event.target as HTMLInputElement).value;
                     }}
-                  />
-                </div>
-              `
-        }
+          />
+        </div>
       </div>
     `;
   }
@@ -608,6 +611,11 @@ export class CrowdSecIpLookupCard extends LitElement {
         flex-direction: column;
         gap: 8px;
         padding: 8px 12px 12px;
+      }
+      /* Belongs to the table above it, so the section below keeps its own
+         spacing rather than inheriting the card's closing padding. */
+      .table-actions {
+        padding-bottom: 0;
       }
       .footer-row {
         display: flex;
