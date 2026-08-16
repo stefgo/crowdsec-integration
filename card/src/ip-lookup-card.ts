@@ -13,8 +13,16 @@ import { customElement, property, state } from "lit/decorators.js";
 
 import "./ip-lookup-editor";
 import { banIp, deleteForIp, fetchInstances, lookupIp } from "./api";
-import { countryFlag, countryName, formatMoment, formatRemaining } from "./format";
+import {
+  countryFlag,
+  countryName,
+  formatMoment,
+  formatRemaining,
+  originLabel,
+  shortScenario,
+} from "./format";
 import { EN, Localizer, TranslationKey, createLocalizer } from "./localize";
+import { sharedStyles } from "./styles";
 import type {
   CrowdSecIpLookupCardConfig,
   HomeAssistant,
@@ -192,30 +200,36 @@ export class CrowdSecIpLookupCard extends LitElement {
     return html`
       <ha-card>
         <div class="card-header">
-          <div class="title">${this._config.title ?? t("lookup.title")}</div>
+          <div class="heading">
+            <div class="title">${this._config.title ?? t("lookup.title")}</div>
+            <div class="subtitle">${t("lookup.intro")}</div>
+          </div>
+          <div class="spacer"></div>
           ${this._instances.length > 1
-            ? html`<select
-                @change=${(event: Event) => {
-                  this._entryId = (event.target as HTMLSelectElement).value;
-                  this._report = null;
-                }}
-              >
-                ${this._instances.map(
-                  (instance) => html`<option
-                    value=${instance.config_entry_id}
-                    ?selected=${instance.config_entry_id === this._entryId}
-                  >
-                    ${instance.title}
-                  </option>`,
-                )}
-              </select>`
+            ? html`<div class="actions">
+                <select
+                  @change=${(event: Event) => {
+                    this._entryId = (event.target as HTMLSelectElement).value;
+                    this._report = null;
+                  }}
+                >
+                  ${this._instances.map(
+                    (instance) => html`<option
+                      value=${instance.config_entry_id}
+                      ?selected=${instance.config_entry_id === this._entryId}
+                    >
+                      ${instance.title}
+                    </option>`,
+                  )}
+                </select>
+              </div>`
             : nothing}
         </div>
 
         <div class="query">
           <input
-            type="text"
-            inputmode="numeric"
+            class="search"
+            type="search"
             placeholder=${t("lookup.placeholder")}
             .value=${this._query}
             @input=${(event: Event) => {
@@ -226,14 +240,13 @@ export class CrowdSecIpLookupCard extends LitElement {
             }}
           />
           <button
-            class="primary"
+            class="text-button"
             ?disabled=${this._loading || !this._query.trim()}
             @click=${() => void this._lookup()}
           >
             ${this._loading ? t("lookup.checking") : t("lookup.check")}
           </button>
         </div>
-        <div class="intro">${t("lookup.intro")}</div>
 
         ${this._error ? html`<div class="error">${this._error}</div>` : nothing}
         ${this._notice
@@ -258,37 +271,36 @@ export class CrowdSecIpLookupCard extends LitElement {
     // The route being closed is not the same as "nothing found" — saying
     // "not blocked" there would be a guess dressed up as an answer.
     if (report.decisions_available === false) {
-      return html`<div class="verdict unknown">
-        <div class="target">${report.target}</div>
-        <div class="state">${t("lookup.unknown")}</div>
+      return html`<div class="verdict">
+        <span class="mono address">${report.target}</span>
+        <span class="state unknown">${t("lookup.unknown")}</span>
       </div>`;
     }
 
     return html`
-      <div class="verdict ${report.blocked ? "blocked" : "clear"}">
-        <div class="target">${report.target}</div>
-        <div class="state">
+      <div class="verdict">
+        <span class="mono address">${report.target}</span>
+        <span class="state ${report.blocked ? "blocked" : "clear"}">
           ${report.blocked ? t("lookup.blocked") : t("lookup.not_blocked")}
-        </div>
+        </span>
         ${report.blocked
-          ? html`<div class="sub">
-              ${t("lookup.remaining")}:
+          ? html`<span class="sub">
               ${formatRemaining(report.seconds_left, t)}${report.expires_at
                 ? html` · ${t("lookup.expires")}
                     ${formatMoment(report.expires_at, this._locale, t)}`
                 : nothing}
-            </div>`
+            </span>`
           : nothing}
       </div>
 
       ${report.covering_ranges.length
-        ? html`<div class="covered">
-            <div class="covered-title">
+        ? html`<div class="notice">
+            <span>
               ${t("lookup.covered_by", {
                 ranges: report.covering_ranges.join(", "),
               })}
-            </div>
-            <div class="covered-hint">${t("lookup.covered_hint")}</div>
+              — ${t("lookup.covered_hint")}
+            </span>
           </div>`
         : nothing}
       ${report.decisions.length ? this._renderDecisions(report) : nothing}
@@ -299,18 +311,20 @@ export class CrowdSecIpLookupCard extends LitElement {
   private _renderDecisions(report: IpReport) {
     const t = this._t;
     return html`
-      <div class="section">
-        <div class="section-title">${t("lookup.decisions")}</div>
+      <div class="section-title">${t("lookup.decisions")}</div>
+      <div class="table-wrap">
         <table>
           <tbody>
             ${report.decisions.map(
               (decision) => html`<tr>
                 <td class="mono">${decision.value}</td>
                 <td>${decision.type}</td>
-                <td>${decision.scenario ?? "—"}</td>
+                <td class="ellipsis">
+                  ${shortScenario(decision.scenario, t)}
+                </td>
                 <td>
                   <span class="tag ${decision.origin_kind}"
-                    >${decision.origin ?? decision.origin_kind}</span
+                    >${originLabel(decision.origin, t)}</span
                   >
                 </td>
                 <td class="right">
@@ -327,48 +341,64 @@ export class CrowdSecIpLookupCard extends LitElement {
   private _renderHistory(report: IpReport) {
     const t = this._t;
     if (!report.alerts_available) {
-      return html`<div class="section">
-        <div class="section-title">${t("lookup.history")}</div>
-        <div class="muted">${t("lookup.alerts_unavailable")}</div>
-      </div>`;
+      return html`<div class="section-title">${t("lookup.history")}</div>
+        <div class="empty">${t("lookup.alerts_unavailable")}</div>`;
     }
     if (!report.alerts) {
-      return html`<div class="section">
-        <div class="section-title">${t("lookup.history")}</div>
-        <div class="muted">${t("lookup.no_alerts")}</div>
-      </div>`;
+      return html`<div class="section-title">${t("lookup.history")}</div>
+        <div class="empty">${t("lookup.no_alerts")}</div>`;
     }
 
+    const entries: [string, unknown][] = [
+      [t("lookup.alerts"), report.alerts],
+      ...(report.first_seen
+        ? ([
+            [
+              t("lookup.first_seen"),
+              formatMoment(report.first_seen, this._locale, t),
+            ],
+          ] as [string, unknown][])
+        : []),
+      ...(report.last_seen
+        ? ([
+            [
+              t("lookup.last_seen"),
+              formatMoment(report.last_seen, this._locale, t),
+            ],
+          ] as [string, unknown][])
+        : []),
+      ...(report.country
+        ? ([
+            [
+              t("column.country"),
+              `${countryFlag(report.country)} ${countryName(
+                report.country,
+                this._locale,
+              )}`,
+            ],
+          ] as [string, unknown][])
+        : []),
+      ...(report.as_name
+        ? ([[t("column.as"), report.as_name]] as [string, unknown][])
+        : []),
+      ...(report.scenarios.length
+        ? ([
+            [t("lookup.scenarios"), report.scenarios.join(", ")],
+          ] as [string, unknown][])
+        : []),
+    ];
+
     return html`
-      <div class="section">
-        <div class="section-title">${t("lookup.history")}</div>
-        <dl>
-          <dt>${t("lookup.alerts")}</dt>
-          <dd>${report.alerts}</dd>
-          ${report.first_seen
-            ? html`<dt>${t("lookup.first_seen")}</dt>
-                <dd>${formatMoment(report.first_seen, this._locale, t)}</dd>`
-            : nothing}
-          ${report.last_seen
-            ? html`<dt>${t("lookup.last_seen")}</dt>
-                <dd>${formatMoment(report.last_seen, this._locale, t)}</dd>`
-            : nothing}
-          ${report.country
-            ? html`<dt>${t("column.country")}</dt>
-                <dd>
-                  ${countryFlag(report.country)}
-                  ${countryName(report.country, this._locale)}
-                </dd>`
-            : nothing}
-          ${report.as_name
-            ? html`<dt>${t("column.as")}</dt>
-                <dd>${report.as_name}</dd>`
-            : nothing}
-          ${report.scenarios.length
-            ? html`<dt>${t("lookup.scenarios")}</dt>
-                <dd>${report.scenarios.join(", ")}</dd>`
-            : nothing}
-        </dl>
+      <div class="section-title">${t("lookup.history")}</div>
+      <div class="history">
+        <div class="detail-grid">
+          ${entries.map(
+            ([label, value]) => html`<div class="detail">
+              <span class="label">${label}</span>
+              <span class="value">${value}</span>
+            </div>`,
+          )}
+        </div>
       </div>
     `;
   }
@@ -377,10 +407,10 @@ export class CrowdSecIpLookupCard extends LitElement {
     const t = this._t;
     const canUnban = report.blocked && report.deletable;
     return html`
-      <div class="actions">
+      <div class="footer">
         ${canUnban
           ? html`<button
-              class="danger"
+              class="text-button danger"
               ?disabled=${this._busy}
               @click=${() => void this._unban()}
             >
@@ -388,261 +418,142 @@ export class CrowdSecIpLookupCard extends LitElement {
             </button>`
           : nothing}
         ${report.blocked && !report.deletable
-          ? html`<div class="muted">${t("lookup.not_deletable")}</div>`
+          ? html`<span class="hint">${t("lookup.not_deletable")}</span>`
           : nothing}
+        <div class="spacer"></div>
         ${this._config.hide_ban
           ? nothing
           : html`
-              <div class="ban-row">
-                <input
-                  class="short"
-                  aria-label=${t("lookup.ban_duration")}
-                  .value=${this._duration}
-                  @input=${(event: Event) => {
-                    this._duration = (event.target as HTMLInputElement).value;
-                  }}
-                />
-                <input
-                  aria-label=${t("lookup.ban_reason")}
-                  .value=${this._reason}
-                  @input=${(event: Event) => {
-                    this._reason = (event.target as HTMLInputElement).value;
-                  }}
-                />
-                <button
-                  class="primary"
-                  ?disabled=${this._busy}
-                  @click=${() => void this._ban()}
-                >
-                  ${this._busy ? t("lookup.banning") : t("lookup.ban")}
-                </button>
-              </div>
+              <input
+                class="short"
+                aria-label=${t("lookup.ban_duration")}
+                .value=${this._duration}
+                @input=${(event: Event) => {
+                  this._duration = (event.target as HTMLInputElement).value;
+                }}
+              />
+              <input
+                class="reason"
+                aria-label=${t("lookup.ban_reason")}
+                .value=${this._reason}
+                @input=${(event: Event) => {
+                  this._reason = (event.target as HTMLInputElement).value;
+                }}
+              />
+              <button
+                class="text-button"
+                ?disabled=${this._busy}
+                @click=${() => void this._ban()}
+              >
+                ${this._busy ? t("lookup.banning") : t("lookup.ban")}
+              </button>
             `}
       </div>
     `;
   }
 
-  static styles = css`
-    ha-card {
-      padding: 12px 16px 16px;
-    }
+  static styles = [
+    sharedStyles,
+    css`
+      ha-card {
+        overflow: hidden;
+      }
+      .heading {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        /* The intro is a full sentence; without a ceiling it pushes the
+           instance picker off the header on a narrow column. */
+        max-width: 32em;
+      }
 
-    .card-header {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      padding-bottom: 8px;
-    }
-    .title {
-      font-size: 1.3rem;
-      font-weight: 500;
-      flex: 1;
-    }
+      /* Same 12px left edge as the header and the table cells. */
+      .query {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 0 12px 8px;
+      }
+      input.search {
+        flex: 1;
+        min-width: 0;
+      }
 
-    .query {
-      display: flex;
-      gap: 8px;
-    }
-    input {
-      flex: 1;
-      min-width: 0;
-      padding: 8px 10px;
-      border: 1px solid var(--divider-color, #ccc);
-      border-radius: 8px;
-      background: var(--card-background-color, #fff);
-      color: var(--primary-text-color);
-      font: inherit;
-    }
-    input.short {
-      flex: 0 0 5.5rem;
-    }
-    select {
-      padding: 6px 8px;
-      border-radius: 8px;
-      border: 1px solid var(--divider-color, #ccc);
-      background: var(--card-background-color, #fff);
-      color: var(--primary-text-color);
-      font: inherit;
-    }
+      /* The answer to the question, so it gets a line of its own — but in the
+         card's own type scale, not a banner. */
+      .verdict {
+        display: flex;
+        align-items: baseline;
+        flex-wrap: wrap;
+        gap: 8px;
+        padding: 8px 12px 12px;
+        border-top: 1px solid var(--divider-color);
+      }
+      .address {
+        font-size: 15px;
+      }
+      .state {
+        font-size: 13px;
+        font-weight: 500;
+      }
+      .state.blocked {
+        color: var(--error-color);
+      }
+      .state.clear {
+        color: var(--success-color, var(--state-icon-active-color));
+      }
+      .state.unknown {
+        color: var(--warning-color);
+      }
+      .sub {
+        font-size: 12px;
+        color: var(--secondary-text-color);
+      }
 
-    button {
-      padding: 8px 14px;
-      border: none;
-      border-radius: 8px;
-      font: inherit;
-      cursor: pointer;
-      background: var(--secondary-background-color, #eee);
-      color: var(--primary-text-color);
-    }
-    button[disabled] {
-      opacity: 0.5;
-      cursor: default;
-    }
-    button.primary {
-      background: var(--primary-color);
-      color: var(--text-primary-color, #fff);
-    }
-    button.danger {
-      background: var(--error-color, #db4437);
-      color: var(--text-primary-color, #fff);
-    }
-    .text-button {
-      background: none;
-      padding: 0 4px;
-      color: var(--primary-color);
-    }
+      .section-title {
+        font-size: 12px;
+        font-weight: 500;
+        color: var(--secondary-text-color);
+        padding: 8px 12px 4px;
+      }
+      .table-wrap {
+        overflow-x: auto;
+      }
+      .ellipsis {
+        max-width: 180px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .history {
+        padding: 4px 12px 8px;
+      }
 
-    .intro,
-    .muted {
-      color: var(--secondary-text-color);
-      font-size: 0.85rem;
-      padding-top: 6px;
-    }
-
-    .error,
-    .notice {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      margin-top: 10px;
-      padding: 8px 10px;
-      border-radius: 8px;
-      font-size: 0.9rem;
-    }
-    .error {
-      background: var(--error-color, #db4437);
-      color: var(--text-primary-color, #fff);
-    }
-    .notice {
-      background: var(--secondary-background-color, #eee);
-    }
-    .notice span {
-      flex: 1;
-    }
-
-    .empty {
-      padding: 24px 0;
-      text-align: center;
-      color: var(--secondary-text-color);
-    }
-
-    /* The verdict is the answer to the question — it gets the space and the
-       colour, everything below it is supporting detail. */
-    .verdict {
-      margin-top: 14px;
-      padding: 12px 14px;
-      border-radius: 10px;
-      border-left: 4px solid var(--divider-color, #ccc);
-      background: var(--secondary-background-color, #f4f4f4);
-    }
-    .verdict.blocked {
-      border-left-color: var(--error-color, #db4437);
-    }
-    .verdict.clear {
-      border-left-color: var(--success-color, #43a047);
-    }
-    .verdict.unknown {
-      border-left-color: var(--warning-color, #ffa600);
-    }
-    .target {
-      font-family: var(--code-font-family, monospace);
-      font-size: 1.05rem;
-    }
-    .state {
-      font-size: 1.2rem;
-      font-weight: 500;
-      padding-top: 2px;
-    }
-    .sub {
-      color: var(--secondary-text-color);
-      font-size: 0.9rem;
-      padding-top: 4px;
-    }
-
-    /* Being caught by a range is the finding people do not expect, so it gets
-       its own block rather than a footnote in the table. */
-    .covered {
-      margin-top: 10px;
-      padding: 10px 12px;
-      border-radius: 8px;
-      background: var(--secondary-background-color, #f4f4f4);
-    }
-    .covered-title {
-      font-family: var(--code-font-family, monospace);
-    }
-    .covered-hint {
-      color: var(--secondary-text-color);
-      font-size: 0.85rem;
-      padding-top: 4px;
-    }
-
-    .section {
-      margin-top: 16px;
-    }
-    .section-title {
-      font-weight: 500;
-      padding-bottom: 6px;
-    }
-
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      font-size: 0.9rem;
-    }
-    td {
-      padding: 6px 8px;
-      border-top: 1px solid var(--divider-color, #eee);
-    }
-    td.right {
-      text-align: right;
-      white-space: nowrap;
-    }
-    .mono {
-      font-family: var(--code-font-family, monospace);
-    }
-
-    dl {
-      display: grid;
-      grid-template-columns: auto 1fr;
-      gap: 4px 16px;
-      margin: 0;
-      font-size: 0.9rem;
-    }
-    dt {
-      color: var(--secondary-text-color);
-    }
-    dd {
-      margin: 0;
-    }
-
-    /* Only the origins that limit what can be done get a colour; local is the
-       normal case and stays quiet. */
-    .tag {
-      padding: 1px 6px;
-      border-radius: 6px;
-      font-size: 0.8rem;
-      background: var(--secondary-background-color, #eee);
-    }
-    .tag.capi,
-    .tag.lists {
-      background: var(--warning-color, #ffa600);
-      color: var(--text-primary-color, #fff);
-    }
-
-    .actions {
-      display: flex;
-      flex-wrap: wrap;
-      align-items: center;
-      gap: 8px;
-      margin-top: 16px;
-    }
-    .ban-row {
-      display: flex;
-      gap: 8px;
-      flex: 1;
-      min-width: 260px;
-    }
-  `;
+      .footer {
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 8px;
+        padding: 8px 12px 12px;
+        border-top: 1px solid var(--divider-color);
+      }
+      .hint {
+        font-size: 12px;
+        color: var(--secondary-text-color);
+      }
+      input.short {
+        width: 4.5em;
+      }
+      input.reason {
+        flex: 1;
+        min-width: 8em;
+      }
+      /* The text buttons bring their own padding; without compensation the row
+         would end short of the edge the rest of the card keeps. */
+      .footer .text-button:last-child {
+        margin-right: -8px;
+      }
+    `,
+  ];
 }
 
 declare global {

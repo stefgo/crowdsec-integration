@@ -37,6 +37,7 @@ import {
   shortScenario,
 } from "./format";
 import { EN, Localizer, TranslationKey, createLocalizer } from "./localize";
+import { sharedStyles } from "./styles";
 import type {
   CrowdSecBansCardConfig,
   Decision,
@@ -317,7 +318,7 @@ export class CrowdSecBansCard extends LitElement {
       <div class="card-header">
         <div class="heading">
           <div class="title">${this._config.title ?? t("card.title")}</div>
-          <div class="counts">
+          <div class="subtitle">
             ${t("card.counts", {
               active: counts.active,
               expired: counts.expired,
@@ -583,274 +584,146 @@ export class CrowdSecBansCard extends LitElement {
     `;
   }
 
-  static styles = css`
-    :host {
-      display: block;
-    }
-    ha-card {
-      overflow: hidden;
-    }
-
-    /* One left edge for everything: header, filters and the table cells all
-       start at 12px, so the title sits above the first column instead of
-       floating next to it. */
-    .card-header {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      padding: 16px 12px 8px;
-      flex-wrap: wrap;
-    }
-    .title {
-      font-size: 24px;
-      font-weight: 400;
-      line-height: 1.2;
-    }
-    .counts {
-      font-size: 12px;
-      color: var(--secondary-text-color);
-    }
-    .spacer {
-      flex: 1;
-    }
-    .actions {
-      display: flex;
-      align-items: center;
-      gap: 4px;
-    }
-    /* The icon button brings its own padding; without compensation the row
-       would end short of the right edge the table keeps. */
-    .actions ha-icon-button {
-      margin-right: -8px;
-      color: var(--secondary-text-color);
-    }
-    /* Turning while the poll runs — the icon is the only feedback there is. */
-    .actions ha-icon-button.spinning {
-      animation: spin 1s linear infinite;
-    }
-    @keyframes spin {
-      to {
-        transform: rotate(360deg);
+  static styles = [
+    sharedStyles,
+    css`
+      ha-card {
+        overflow: hidden;
       }
-    }
-    @media (prefers-reduced-motion: reduce) {
+
+      /* The icon button brings its own padding; without compensation the row
+         would end short of the right edge the table keeps. */
+      .actions ha-icon-button {
+        margin-right: -8px;
+        color: var(--secondary-text-color);
+      }
+      /* Turning while the poll runs — the icon is the only feedback there is. */
       .actions ha-icon-button.spinning {
-        animation: none;
-        opacity: 0.5;
+        animation: spin 1s linear infinite;
       }
-    }
-    .time {
-      font-size: 12px;
-      color: var(--secondary-text-color);
-      white-space: nowrap;
-    }
-    .empty {
-      padding: 16px 12px;
-      color: var(--secondary-text-color);
-    }
-    .error {
-      padding: 12px;
-      color: var(--error-color);
-    }
-    .notice {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      padding: 4px 12px 12px;
-      font-size: 13px;
-      color: var(--warning-color);
-    }
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .actions ha-icon-button.spinning {
+          animation: none;
+          opacity: 0.5;
+        }
+      }
+      .time {
+        font-size: 12px;
+        color: var(--secondary-text-color);
+        white-space: nowrap;
+      }
 
-    /* Controls */
-    .text-button {
-      background: none;
-      border: none;
-      color: var(--primary-color);
-      font-size: 13px;
-      font-family: inherit;
-      cursor: pointer;
-      padding: 6px 8px;
-      border-radius: 4px;
-    }
-    .text-button:hover:not(:disabled) {
-      background: var(--secondary-background-color);
-    }
-    .text-button:disabled {
-      color: var(--secondary-text-color);
-      cursor: default;
-    }
-    .text-button.danger {
-      color: var(--error-color);
-    }
-    select,
-    input.search {
-      background: none;
-      color: var(--primary-text-color);
-      border: 1px solid var(--divider-color);
-      border-radius: 4px;
-      padding: 6px 8px;
-      font-size: 13px;
-      font-family: inherit;
-    }
-    input.search {
-      width: 100%;
-      box-sizing: border-box;
-    }
+      input.search {
+        width: 100%;
+        box-sizing: border-box;
+      }
 
-    .filters {
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-      padding: 0 12px 8px;
-    }
-    .chips {
-      display: flex;
-      flex-wrap: wrap;
-      align-items: center;
-      gap: 6px;
-    }
-    .chip {
-      border: 1px solid var(--divider-color);
-      background: none;
-      color: var(--primary-text-color);
-      border-radius: 14px;
-      padding: 3px 10px;
-      font-size: 12px;
-      font-family: inherit;
-      cursor: pointer;
-      text-transform: capitalize;
-    }
-    /* Active chips carry the fill, inactive ones step back — the state stays
-       legible from the contrast even without color vision. */
-    .chip.active {
-      background: var(--primary-color);
-      border-color: var(--primary-color);
-      color: #fff;
-      font-weight: 600;
-    }
-    .chip:not(.active) {
-      opacity: 0.7;
-    }
-    .divider {
-      width: 1px;
-      height: 18px;
-      background: var(--divider-color);
-      margin: 0 2px;
-    }
+      .filters {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        padding: 0 12px 8px;
+      }
+      .chips {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 6px;
+      }
+      .chip {
+        border: 1px solid var(--divider-color);
+        background: none;
+        color: var(--primary-text-color);
+        border-radius: 14px;
+        padding: 3px 10px;
+        font-size: 12px;
+        font-family: inherit;
+        cursor: pointer;
+        text-transform: capitalize;
+      }
+      /* Active chips carry the fill, inactive ones step back — the state stays
+         legible from the contrast even without color vision. */
+      .chip.active {
+        background: var(--primary-color);
+        border-color: var(--primary-color);
+        color: #fff;
+        font-weight: 600;
+      }
+      .chip:not(.active) {
+        opacity: 0.7;
+      }
+      .divider {
+        width: 1px;
+        height: 18px;
+        background: var(--divider-color);
+        margin: 0 2px;
+      }
 
-    /* Table */
-    .table-wrap {
-      overflow-x: auto;
-    }
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      font-size: 13px;
-    }
-    th,
-    td {
-      padding: 8px 12px;
-      text-align: left;
-      border-top: 1px solid var(--divider-color);
-      white-space: nowrap;
-    }
-    th {
-      font-size: 12px;
-      font-weight: 500;
-      color: var(--secondary-text-color);
-      position: sticky;
-      top: 0;
-      z-index: 1;
-      background: var(--card-background-color);
-    }
-    th.sortable {
-      cursor: pointer;
-      user-select: none;
-    }
-    .arrow {
-      margin-left: 4px;
-    }
-    .right {
-      text-align: right;
-    }
-    .mono {
-      font-family: var(--code-font-family, monospace);
-    }
-    .ellipsis {
-      max-width: 180px;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-    tr.row {
-      cursor: pointer;
-    }
-    tr.row:hover td {
-      background: var(--secondary-background-color);
-    }
-    tr.row.expired td {
-      color: var(--secondary-text-color);
-    }
-    /* The header brings the first separator; the detail panel belongs to the
-       row above it and must not be cut off from it. */
-    thead th {
-      border-top: none;
-    }
-    .tag {
-      font-size: 11px;
-      padding: 1px 6px;
-      border-radius: 8px;
-      background: var(--divider-color);
-      color: var(--secondary-text-color);
-    }
-    /* Only the origins that limit what can be done get a color; local is the
-       normal case and stays quiet. */
-    .tag.capi {
-      color: var(--info-color);
-    }
-    .tag.lists {
-      color: var(--warning-color);
-    }
+      /* Table */
+      .table-wrap {
+        overflow-x: auto;
+      }
+      /* The header stays put while a long table scrolls under it. */
+      th {
+        position: sticky;
+        top: 0;
+        z-index: 1;
+        background: var(--card-background-color);
+      }
+      th.sortable {
+        cursor: pointer;
+        user-select: none;
+      }
+      .arrow {
+        margin-left: 4px;
+      }
+      .ellipsis {
+        max-width: 180px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      tr.row {
+        cursor: pointer;
+      }
+      tr.row:hover td {
+        background: var(--secondary-background-color);
+      }
+      tr.row.expired td {
+        color: var(--secondary-text-color);
+      }
+      /* The header brings the first separator; the detail panel belongs to the
+         row above it and must not be cut off from it. */
+      thead th {
+        border-top: none;
+      }
 
-    /* Detail row */
-    tr.details td {
-      background: var(--secondary-background-color);
-      white-space: normal;
-      border-top: none;
-    }
-    .detail-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-      gap: 8px 16px;
-    }
-    .detail {
-      display: flex;
-      flex-direction: column;
-    }
-    .detail .label {
-      font-size: 11px;
-      text-transform: uppercase;
-      letter-spacing: 0.04em;
-      color: var(--secondary-text-color);
-    }
-    .detail .value {
-      font-size: 13px;
-      overflow-wrap: anywhere;
-    }
-    .detail-actions {
-      margin-top: 8px;
-      /* The button brings its own padding; without compensation it would sit
-         out of alignment with the labels above it. */
-      margin-left: -8px;
-    }
+      /* Detail row */
+      tr.details td {
+        background: var(--secondary-background-color);
+        white-space: normal;
+        border-top: none;
+      }
+      .detail-actions {
+        margin-top: 8px;
+        /* The button brings its own padding; without compensation it would sit
+           out of alignment with the labels above it. */
+        margin-left: -8px;
+      }
 
-    .pager {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 8px;
-      padding: 4px 12px 8px;
-    }
-  `;
+      .pager {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        padding: 4px 12px 8px;
+      }
+    `,
+  ];
 }
 
 declare global {

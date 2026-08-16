@@ -137,7 +137,14 @@ entry.
 `filters.ts` (search/filter/sort), `localize.ts` (DE/EN) and `api.ts` (including the
 paging of `fetchAllDecisions`) hold the logic that vitest covers; the elements themselves
 are not unit-tested, since the card setup has no DOM environment. `editor.ts` and
-`ip-lookup-editor.ts` are the visual editors. Rollup writes straight into
+`ip-lookup-editor.ts` are the visual editors.
+
+**`styles.ts` holds the visual vocabulary both cards share** — header, type scale,
+controls, table, tags, label/value grid — and both do `static styles = [sharedStyles,
+css\`…\`]` with only their own rules in the second block. Sizes are px, matching Home
+Assistant's own cards, and padding sits on the sections rather than on `ha-card` so a
+table can run edge to edge while text keeps its 12px inset. A new card belongs on
+`sharedStyles` too; writing its own set is how the two drifted apart the first time. Rollup writes straight into
 `custom_components/crowdsec/www/` — the built file is **not committed**; HACS installs
 get it from the release zip.
 
