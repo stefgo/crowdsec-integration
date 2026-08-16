@@ -9,6 +9,7 @@ cannot be faked usefully.
 
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from unittest.mock import AsyncMock, patch
 
@@ -68,13 +69,20 @@ def make_alert(
     alert_id: int = 1,
     ip: str = "192.0.2.10",
     scenario: str = "crowdsecurity/ssh-bf",
-    created_at: str = "2026-08-15T11:59:00Z",
+    minutes_ago: int = 1,
     ban: bool = True,
 ) -> dict[str, Any]:
-    """One alert in the shape the LAPI returns it."""
+    """One alert in the shape the LAPI returns it.
+
+    The timestamp is relative on purpose: the coordinator keeps a rolling 24h
+    window and drops what falls out of it, so a fixed date would make these
+    tests pass until that date is a day old and then fail for reasons that have
+    nothing to do with the code.
+    """
+    created = datetime.now(UTC) - timedelta(minutes=minutes_ago)
     return {
         "id": alert_id,
-        "created_at": created_at,
+        "created_at": created.isoformat().replace("+00:00", "Z"),
         "scenario": scenario,
         "source": {"value": ip, "ip": ip, "cn": "DE", "as_name": "Example AS"},
         "decisions": (

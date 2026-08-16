@@ -123,8 +123,6 @@ export const EN = {
   "lookup.placeholder": "IP address or CIDR range",
   "lookup.check": "Check",
   "lookup.checking": "Checking …",
-  "lookup.intro":
-    "Checks one address against every source — local decisions, CAPI and blocklists, including a range that contains it.",
   "lookup.blocked": "Blocked",
   "lookup.not_blocked": "Not blocked",
   "lookup.unknown": "The decision list could not be read — no statement possible.",
@@ -272,8 +270,6 @@ const DE: Partial<Record<TranslationKey, string>> = {
   "lookup.placeholder": "IP-Adresse oder CIDR-Bereich",
   "lookup.check": "Prüfen",
   "lookup.checking": "Wird geprüft …",
-  "lookup.intro":
-    "Prüft eine Adresse gegen alle Quellen — lokale Decisions, CAPI und Blocklisten, einschließlich eines Bereichs, der sie enthält.",
   "lookup.blocked": "Gesperrt",
   "lookup.not_blocked": "Nicht gesperrt",
   "lookup.unknown": "Die Decision-Liste konnte nicht gelesen werden — keine Aussage möglich.",

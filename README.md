@@ -192,7 +192,9 @@ request, made only when you ask:
 * **the covering range**, called out separately when the address is not banned
   by name. This is the finding the table cannot show, so it gets its own block
   rather than a footnote;
-* **every decision in force**, with origin — including CAPI and blocklists;
+* **every decision in force**, with origin — including CAPI and blocklists. The
+  table is the one from the ban card: same columns, same expandable rows, same
+  per-row unban where the decision is a local one;
 * **the last 24 hours** from the alerts: how often, since when, country, AS and
   the scenarios. An address can be unknown to the decision list and still have
   shown up twenty times today.
@@ -205,7 +207,7 @@ Two things are deliberately different from the table:
 * It reads **live**, not from the polling cycle. Nothing is cached — a lookup
   costs one request and always shows the current state.
 
-**Ban and unban** sit below the answer. *Ban* takes a duration and a reason,
+**Ban and unban** sit below the answer, next to the per-row unban in the table. *Ban* takes a duration and a reason,
 prefilled from the card configuration, and confirms before acting; the fresh
 result comes straight back, so the click shows its own effect. *Remove all
 decisions* appears only when something local is actually there to remove — a

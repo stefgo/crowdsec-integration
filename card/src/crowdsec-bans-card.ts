@@ -28,16 +28,16 @@ import {
   emptyFilter,
   sortDecisions,
 } from "./filters";
-import {
-  countryFlag,
-  countryName,
-  formatMoment,
-  formatRemaining,
-  originLabel,
-  shortScenario,
-} from "./format";
+import { formatMoment } from "./format";
 import { EN, Localizer, TranslationKey, createLocalizer } from "./localize";
 import { sharedStyles } from "./styles";
+import {
+  COLUMN_COUNT,
+  renderDetailGrid,
+  renderRowAction,
+  renderRowCells,
+  renderTableHeader,
+} from "./table";
 import type {
   CrowdSecBansCardConfig,
   Decision,
@@ -425,27 +425,13 @@ export class CrowdSecBansCard extends LitElement {
   }
 
   private _renderTable(rows: Decision[]) {
-    const t = this._t;
-    const header = (column: SortColumn, key: TranslationKey) => html`
-      <th @click=${() => this._sortBy(column)} class="sortable">
-        ${t(key)}${this._sortIndicator(column)}
-      </th>
-    `;
-
     return html`
       <div class="table-wrap">
         <table>
-          <thead>
-            <tr>
-              ${header("value", "column.address")} ${header("type", "column.type")}
-              ${header("scenario", "column.scenario")}
-              ${header("country", "column.country")}
-              ${header("as_name", "column.as")}
-              ${header("origin", "column.origin")}
-              ${header("seconds_left", "column.remaining")}
-              <th class="right">${t("column.action")}</th>
-            </tr>
-          </thead>
+          ${renderTableHeader(this._t, {
+            onSort: (column) => this._sortBy(column),
+            indicator: (column) => this._sortIndicator(column),
+          })}
           <tbody>
             ${rows.map((row) => this._renderRow(row))}
           </tbody>
@@ -455,91 +441,34 @@ export class CrowdSecBansCard extends LitElement {
   }
 
   private _renderRow(row: Decision) {
-    const t = this._t;
-    const none = t("value.none");
     const expanded = this._expanded === row.key;
     return html`
       <tr
         class="row ${row.status} ${expanded ? "expanded" : ""}"
         @click=${() => (this._expanded = expanded ? null : row.key)}
       >
-        <td class="mono">${row.value ?? none}</td>
-        <td>${row.type ?? none}</td>
-        <td title=${row.scenario ?? ""}>${shortScenario(row.scenario, t)}</td>
-        <td title=${countryName(row.country, this._locale, t)}>
-          ${countryFlag(row.country)} ${row.country ?? none}
+        ${renderRowCells(row, this._t, this._locale)}
+        <td class="right">
+          ${renderRowAction(row, this._t, {
+            busy: this._busy === row.key,
+            onUnban: (event: Event) => {
+              // Without this the click would also toggle the detail panel.
+              event.stopPropagation();
+              void this._unban(row, false);
+            },
+          })}
         </td>
-        <td class="ellipsis" title=${row.as_name ?? ""}>${row.as_name ?? none}</td>
-        <td>
-          <span class="tag ${row.origin_kind}">${originLabel(row.origin, t)}</span>
-        </td>
-        <td class="mono">${formatRemaining(row.seconds_left, t)}</td>
-        <td class="right">${this._renderAction(row)}</td>
       </tr>
       ${expanded ? this._renderDetails(row) : nothing}
     `;
   }
 
-  private _renderAction(row: Decision) {
-    const t = this._t;
-    if (!row.deletable) {
-      const why =
-        row.status === "expired"
-          ? t("action.blocked_expired")
-          : t("action.blocked_remote");
-      return html`<button class="text-button" disabled title=${why}>
-        ${t("value.none")}
-      </button>`;
-    }
-    return html`<button
-      class="text-button danger"
-      ?disabled=${this._busy === row.key}
-      title=${t("action.unban_hint")}
-      @click=${(event: Event) => {
-        // Without this the click would also toggle the detail panel.
-        event.stopPropagation();
-        void this._unban(row, false);
-      }}
-    >
-      ${this._busy === row.key ? "…" : t("action.unban")}
-    </button>`;
-  }
-
   private _renderDetails(row: Decision) {
     const t = this._t;
-    const none = t("value.none");
-    const status = t(`status.${row.status}` as TranslationKey);
-    const entries: [string, string][] = [
-      [t("detail.address"), row.value ?? none],
-      [t("detail.scope"), row.scope ?? none],
-      [t("detail.type"), row.type ?? none],
-      [t("detail.scenario"), row.scenario ?? none],
-      [t("detail.origin"), row.origin ?? none],
-      [t("detail.id"), row.id === null ? none : String(row.id)],
-      [t("detail.duration"), row.duration ?? none],
-      [t("detail.expires"), formatMoment(row.until, this._locale, t)],
-      [t("detail.first_seen"), formatMoment(row.created_at, this._locale, t)],
-      [t("detail.country"), countryName(row.country, this._locale, t)],
-      [t("detail.as"), row.as_name ?? none],
-      [t("detail.as_number"), row.as_number ?? none],
-      [t("detail.alerts"), String(row.alerts_24h)],
-      [
-        t("detail.status"),
-        row.simulated ? t("detail.simulated", { status }) : status,
-      ],
-    ];
-
     return html`
       <tr class="details">
-        <td colspan="8">
-          <div class="detail-grid">
-            ${entries.map(
-              ([label, value]) => html`<div class="detail">
-                <span class="label">${label}</span>
-                <span class="value">${value}</span>
-              </div>`,
-            )}
-          </div>
+        <td colspan=${COLUMN_COUNT}>
+          ${renderDetailGrid(row, t, this._locale)}
           ${row.status === "active" && row.value
             ? html`<div class="detail-actions">
                 <button
@@ -664,10 +593,6 @@ export class CrowdSecBansCard extends LitElement {
         margin: 0 2px;
       }
 
-      /* Table */
-      .table-wrap {
-        overflow-x: auto;
-      }
       /* The header stays put while a long table scrolls under it. */
       th {
         position: sticky;
@@ -675,45 +600,7 @@ export class CrowdSecBansCard extends LitElement {
         z-index: 1;
         background: var(--card-background-color);
       }
-      th.sortable {
-        cursor: pointer;
-        user-select: none;
-      }
-      .arrow {
-        margin-left: 4px;
-      }
-      .ellipsis {
-        max-width: 180px;
-        overflow: hidden;
-        text-overflow: ellipsis;
-      }
-      tr.row {
-        cursor: pointer;
-      }
-      tr.row:hover td {
-        background: var(--secondary-background-color);
-      }
-      tr.row.expired td {
-        color: var(--secondary-text-color);
-      }
-      /* The header brings the first separator; the detail panel belongs to the
-         row above it and must not be cut off from it. */
-      thead th {
-        border-top: none;
-      }
 
-      /* Detail row */
-      tr.details td {
-        background: var(--secondary-background-color);
-        white-space: normal;
-        border-top: none;
-      }
-      .detail-actions {
-        margin-top: 8px;
-        /* The button brings its own padding; without compensation it would sit
-           out of alignment with the labels above it. */
-        margin-left: -8px;
-      }
 
       .pager {
         display: flex;

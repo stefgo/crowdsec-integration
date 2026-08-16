@@ -159,4 +159,46 @@ export const sharedStyles = css`
     font-size: 13px;
     overflow-wrap: anywhere;
   }
+
+  /* Rows */
+  .table-wrap {
+    overflow-x: auto;
+  }
+  th.sortable {
+    cursor: pointer;
+    user-select: none;
+  }
+  .arrow {
+    margin-left: 4px;
+  }
+  .ellipsis {
+    max-width: 180px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  tr.row {
+    cursor: pointer;
+  }
+  tr.row:hover td {
+    background: var(--secondary-background-color);
+  }
+  tr.row.expired td {
+    color: var(--secondary-text-color);
+  }
+  /* The header brings the first separator; the detail panel belongs to the
+     row above it and must not be cut off from it. */
+  thead th {
+    border-top: none;
+  }
+  tr.details td {
+    background: var(--secondary-background-color);
+    white-space: normal;
+    border-top: none;
+  }
+  .detail-actions {
+    margin-top: 8px;
+    /* The button brings its own padding; without compensation it would sit
+       out of alignment with the labels above it. */
+    margin-left: -8px;
+  }
 `;

@@ -139,6 +139,10 @@ paging of `fetchAllDecisions`) hold the logic that vitest covers; the elements t
 are not unit-tested, since the card setup has no DOM environment. `editor.ts` and
 `ip-lookup-editor.ts` are the visual editors.
 
+**`table.ts` renders the decision table for both cards** — same columns, same cells,
+same action column — while each card keeps its own frame around it: the ban card sorts,
+pages and expands, the lookup card has a handful of rows and needs none of that.
+
 **`styles.ts` holds the visual vocabulary both cards share** — header, type scale,
 controls, table, tags, label/value grid — and both do `static styles = [sharedStyles,
 css\`…\`]` with only their own rules in the second block. Sizes are px, matching Home

@@ -12,19 +12,31 @@ import { LitElement, PropertyValues, css, html, nothing } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
 
 import "./ip-lookup-editor";
-import { banIp, deleteForIp, fetchInstances, lookupIp } from "./api";
+import {
+  banIp,
+  deleteDecision,
+  deleteForIp,
+  fetchInstances,
+  lookupIp,
+} from "./api";
 import {
   countryFlag,
   countryName,
   formatMoment,
   formatRemaining,
-  originLabel,
-  shortScenario,
 } from "./format";
 import { EN, Localizer, TranslationKey, createLocalizer } from "./localize";
 import { sharedStyles } from "./styles";
+import {
+  COLUMN_COUNT,
+  renderDetailGrid,
+  renderRowAction,
+  renderRowCells,
+  renderTableHeader,
+} from "./table";
 import type {
   CrowdSecIpLookupCardConfig,
+  Decision,
   HomeAssistant,
   Instance,
   IpReport,
@@ -46,6 +58,7 @@ export class CrowdSecIpLookupCard extends LitElement {
   @state() private _busy = false;
   @state() private _error: string | null = null;
   @state() private _notice: string | null = null;
+  @state() private _expanded: string | null = null;
   @state() private _duration = DEFAULT_DURATION;
   @state() private _reason = DEFAULT_REASON;
 
@@ -167,6 +180,29 @@ export class CrowdSecIpLookupCard extends LitElement {
     }
   }
 
+  /** Remove one decision — the same action the ban table offers per row. */
+  private async _unbanRow(row: Decision): Promise<void> {
+    const t = this._t;
+    if (!this.hass || !this._entryId || row.id === null) return;
+    if (!confirm(t("action.confirm", { target: `${row.type} ${row.value}` }))) {
+      return;
+    }
+
+    this._busy = true;
+    this._error = null;
+    try {
+      const result = await deleteDecision(this.hass, this._entryId, row.id);
+      this._notice = t("lookup.unbanned", { count: result.deleted });
+      // Ask again instead of dropping the row: another decision may still
+      // cover the address, and then it is not free at all.
+      this._report = await lookupIp(this.hass, this._entryId, row.value ?? "");
+    } catch (err) {
+      this._error = this._message(err);
+    } finally {
+      this._busy = false;
+    }
+  }
+
   private async _unban(): Promise<void> {
     const t = this._t;
     const target = this._report?.target;
@@ -200,10 +236,7 @@ export class CrowdSecIpLookupCard extends LitElement {
     return html`
       <ha-card>
         <div class="card-header">
-          <div class="heading">
-            <div class="title">${this._config.title ?? t("lookup.title")}</div>
-            <div class="subtitle">${t("lookup.intro")}</div>
-          </div>
+          <div class="title">${this._config.title ?? t("lookup.title")}</div>
           <div class="spacer"></div>
           ${this._instances.length > 1
             ? html`<div class="actions">
@@ -314,27 +347,41 @@ export class CrowdSecIpLookupCard extends LitElement {
       <div class="section-title">${t("lookup.decisions")}</div>
       <div class="table-wrap">
         <table>
+          ${renderTableHeader(t)}
           <tbody>
-            ${report.decisions.map(
-              (decision) => html`<tr>
-                <td class="mono">${decision.value}</td>
-                <td>${decision.type}</td>
-                <td class="ellipsis">
-                  ${shortScenario(decision.scenario, t)}
-                </td>
-                <td>
-                  <span class="tag ${decision.origin_kind}"
-                    >${originLabel(decision.origin, t)}</span
-                  >
-                </td>
-                <td class="right">
-                  ${formatRemaining(decision.seconds_left, t)}
-                </td>
-              </tr>`,
-            )}
+            ${report.decisions.map((row) => this._renderRow(row))}
           </tbody>
         </table>
       </div>
+    `;
+  }
+
+  private _renderRow(row: Decision) {
+    const expanded = this._expanded === row.key;
+    return html`
+      <tr
+        class="row ${row.status} ${expanded ? "expanded" : ""}"
+        @click=${() => (this._expanded = expanded ? null : row.key)}
+      >
+        ${renderRowCells(row, this._t, this._locale)}
+        <td class="right">
+          ${renderRowAction(row, this._t, {
+            busy: this._busy,
+            onUnban: (event: Event) => {
+              // Without this the click would also toggle the detail panel.
+              event.stopPropagation();
+              void this._unbanRow(row);
+            },
+          })}
+        </td>
+      </tr>
+      ${expanded
+        ? html`<tr class="details">
+            <td colspan=${COLUMN_COUNT}>
+              ${renderDetailGrid(row, this._t, this._locale)}
+            </td>
+          </tr>`
+        : nothing}
     `;
   }
 
@@ -458,14 +505,6 @@ export class CrowdSecIpLookupCard extends LitElement {
       ha-card {
         overflow: hidden;
       }
-      .heading {
-        display: flex;
-        flex-direction: column;
-        gap: 2px;
-        /* The intro is a full sentence; without a ceiling it pushes the
-           instance picker off the header on a narrow column. */
-        max-width: 32em;
-      }
 
       /* Same 12px left edge as the header and the table cells. */
       .query {
@@ -515,14 +554,6 @@ export class CrowdSecIpLookupCard extends LitElement {
         font-weight: 500;
         color: var(--secondary-text-color);
         padding: 8px 12px 4px;
-      }
-      .table-wrap {
-        overflow-x: auto;
-      }
-      .ellipsis {
-        max-width: 180px;
-        overflow: hidden;
-        text-overflow: ellipsis;
       }
       .history {
         padding: 4px 12px 8px;
