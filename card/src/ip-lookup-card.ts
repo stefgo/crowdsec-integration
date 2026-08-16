@@ -506,6 +506,14 @@ export class CrowdSecIpLookupCard extends LitElement {
             ? nothing
             : html`
                 <div class="footer-row">
+                  <button
+                    class="text-button danger"
+                    ?disabled=${this._busy}
+                    @click=${() => void this._ban()}
+                  >
+                    ${this._busy ? t("lookup.banning") : t("lookup.ban")}
+                  </button>
+                  <span class="mono">${report.target}</span>
                   <input
                     class="short"
                     aria-label=${t("lookup.ban_duration")}
@@ -522,13 +530,6 @@ export class CrowdSecIpLookupCard extends LitElement {
                       this._reason = (event.target as HTMLInputElement).value;
                     }}
                   />
-                  <button
-                    class="text-button danger"
-                    ?disabled=${this._busy}
-                    @click=${() => void this._ban()}
-                  >
-                    ${this._busy ? t("lookup.banning") : t("lookup.ban")}
-                  </button>
                 </div>
               `
         }
