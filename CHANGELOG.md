@@ -8,7 +8,7 @@ The section headings have to match the release tags: the release workflow
 reads the section for the tag it was started with and refuses to publish
 without one.
 
-## [Unreleased]
+## [1.2.0] – 2026-08-17
 
 ### Added
 
@@ -47,6 +47,14 @@ without one.
   WebSocket connection page by page instead of in one message.
 - The diagnostics no longer contain the LAPI and metrics host names; scheme,
   port and path stay.
+- Both cards render the same decision table from one module: same columns,
+  same expandable rows, same per-row unban. The lookup card gained the
+  country, operator and action columns it lacked.
+- The "AS" column is called "Netzblock-Betreiber" / "Network operator" — the
+  cell holds the operator of the address block, not the protocol's acronym.
+- German wording of the lookup card: it used its own keys and said "Alle
+  Decisions entfernen"; it now shares the ban card's phrasing, which names
+  the address it acts on.
 
 ### Fixed
 
@@ -94,7 +102,8 @@ without one.
   sensors for the Prometheus metrics, a problem indicator, services and an
   event on a new ban.
 
-[unreleased]: https://github.com/stefgo/ha-crowdsec-integration/compare/v1.1.0...HEAD
+[unreleased]: https://github.com/stefgo/ha-crowdsec-integration/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/stefgo/ha-crowdsec-integration/releases/tag/v1.2.0
 [1.1.0]: https://github.com/stefgo/ha-crowdsec-integration/releases/tag/v1.1.0
 [1.0.1]: https://github.com/stefgo/ha-crowdsec-integration/releases/tag/1.0.1
 [1.0.0]: https://github.com/stefgo/ha-crowdsec-integration/releases/tag/1.0.0
