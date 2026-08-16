@@ -37,18 +37,14 @@ from .const import (
     CONF_ALERTS_FULL_INTERVAL,
     CONF_ALERTS_LIMIT,
     CONF_BOUNCER_IDLE_INTERVALS,
-    CONF_DECISIONS_SCOPE,
     CONF_PARSE_ERROR_THRESHOLD,
     COUNTER_BOUNCER,
     COUNTER_LINES,
     COUNTER_PARSE_KO,
     COUNTER_PARSE_OK,
-    DECISION_STATUS_ACTIVE,
-    DECISIONS_SCOPE_LOCAL,
     DEFAULT_ALERTS_FULL_INTERVAL,
     DEFAULT_ALERTS_LIMIT,
     DEFAULT_BOUNCER_IDLE_INTERVALS,
-    DEFAULT_DECISIONS_SCOPE,
     DEFAULT_PARSE_ERROR_THRESHOLD,
     DEFAULT_SCAN_INTERVAL,
     DOMAIN,
@@ -114,10 +110,6 @@ class CrowdSecData:
     # Set when the table hit MAX_DECISION_ROWS — the card says so rather than
     # pretending the list it shows is the whole picture.
     decisions_truncated: bool = False
-    # Whether only locally created decisions are being fetched. The card needs
-    # to know: with the CAPI and blocklists left out, the row count and the
-    # "active decisions" sensor deliberately disagree.
-    decisions_local_only: bool = False
 
     new_bans_24h: int | None = None
     alerts_24h: int | None = None
@@ -194,9 +186,6 @@ class CrowdSecCoordinator(DataUpdateCoordinator[CrowdSecData]):
         self._alerts_full_interval = int(
             options.get(CONF_ALERTS_FULL_INTERVAL, DEFAULT_ALERTS_FULL_INTERVAL)
         )
-        self._decisions_scope = str(
-            options.get(CONF_DECISIONS_SCOPE, DEFAULT_DECISIONS_SCOPE)
-        )
         # The rolling alert window. It is filled by a full query now and then
         # and topped up every cycle; see AlertCache for why.
         window = parse_duration(ALERTS_SINCE) or 24 * 60
@@ -207,11 +196,15 @@ class CrowdSecCoordinator(DataUpdateCoordinator[CrowdSecData]):
         self._alerts_truncated = False
 
     @property
-    def decisions_origins(self) -> tuple[str, ...] | None:
-        """The origins the decision query is restricted to, if any."""
-        if self._decisions_scope == DECISIONS_SCOPE_LOCAL:
-            return LOCAL_ORIGINS
-        return None
+    def decisions_origins(self) -> tuple[str, ...]:
+        """The origins the decision query is restricted to.
+
+        Always the local ones. The table exists to show what this Home
+        Assistant can act on; whether some address is blocked by the CAPI or a
+        blocklist is the lookup card's question, and it asks the LAPI directly
+        rather than going through this list.
+        """
+        return LOCAL_ORIGINS
 
     def request_full_alert_poll(self) -> None:
         """Make the next cycle fetch the whole alert window again.
@@ -466,19 +459,14 @@ class CrowdSecCoordinator(DataUpdateCoordinator[CrowdSecData]):
         alerts: list[dict[str, Any]],
         previous: CrowdSecData | None,
     ) -> None:
-        """Build the table for the card and the exact decision count.
+        """Build the table for the card.
 
-        With the full list in hand its count beats the ``cs_active_decisions``
-        metric: the metric is a gauge that CrowdSec only refreshes now and
-        then, whereas the list is what the LAPI is enforcing at this moment.
-
-        Restricted to local origins that no longer holds — the CAPI and the
-        blocklists are missing from the list by design — so the metric keeps
-        the sensor and the table only describes what the card can act on.
+        Only local decisions end up here, so the row count is deliberately not
+        the number of active decisions — the CAPI and the blocklists are
+        missing from it by design. ``active_decisions`` therefore stays with
+        the ``cs_active_decisions`` metric, which counts everything the LAPI
+        enforces.
         """
-        local_only = self.decisions_origins is not None
-        data.decisions_local_only = local_only
-
         if raw_decisions is None:
             data.decisions_available = False
             # A failed decision query must not empty the table — the card would
@@ -490,7 +478,10 @@ class CrowdSecCoordinator(DataUpdateCoordinator[CrowdSecData]):
             return
 
         data.decisions_available = True
-        rows = build_table(raw_decisions, alerts)
+        # The LAPI honours the origins filter on some versions and ignores it
+        # on others, so the table filters again here. Without that a blocklist
+        # entry could still surface in a card that promises local decisions.
+        rows = build_table(raw_decisions, alerts, local_only=True)
         data.decisions_truncated = len(rows) > MAX_DECISION_ROWS
         if data.decisions_truncated:
             _LOGGER.debug(
@@ -501,11 +492,6 @@ class CrowdSecCoordinator(DataUpdateCoordinator[CrowdSecData]):
         # build_table sorts active first and by remaining time, so the cut
         # takes away the rows furthest in the past, not a random selection.
         data.decisions = rows[:MAX_DECISION_ROWS]
-
-        if not local_only:
-            data.active_decisions = sum(
-                1 for row in rows if row.status == DECISION_STATUS_ACTIVE
-            )
 
     def _fire_ban_events(self, summary: AlertSummary) -> set[str]:
         """Fire one event per newly detected ban.

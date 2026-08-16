@@ -69,28 +69,18 @@
           "parse_error_threshold": "Schwellwert Parse-Fehlerquote (%)",
           "bouncer_idle_intervals": "Intervalle ohne Bouncer-Abfragen bis zur Störung",
           "alerts_limit": "Alerts je Abfrage (24h)",
-          "alerts_full_interval": "Vollständige Alert-Aktualisierung (Sekunden)",
-          "decisions_scope": "Decisions in der Card"
+          "alerts_full_interval": "Vollständige Alert-Aktualisierung (Sekunden)"
         },
         "data_description": {
           "timeout": "Muss kleiner als das Abfrageintervall sein. Höher setzen, wenn die Instanz über VPN oder einen langsamen Proxy erreicht wird.",
           "alerts_limit": "Größe einer einzelnen Alert-Abfrage. Wird sie erreicht, teilt die Integration das Zeitfenster und fragt erneut — die 24h-Zahlen bleiben also vollständig. Sehr hohe Werte verlangsamen jeden Zyklus.",
-          "alerts_full_interval": "Wie oft das gesamte 24h-Fenster neu geholt wird. Dazwischen fragt jeder Zyklus nur die Minuten seit dem letzten ab — ein neuer Ban fällt also weiterhin sofort auf. Die Einstellung steuert nur die Last auf der Instanz.",
-          "decisions_scope": "„Nur lokale\" holt ausschließlich die auf dieser Instanz getroffenen Decisions — genau die, die die Card aufheben kann. Eine abonnierte Blocklist kann hunderttausende Einträge haben; die in jedem Zyklus zu holen kostet viel für Zeilen, an denen niemand etwas ändern kann. Der Sensor „Aktive Decisions\" zählt so oder so alle."
+          "alerts_full_interval": "Wie oft das gesamte 24h-Fenster neu geholt wird. Dazwischen fragt jeder Zyklus nur die Minuten seit dem letzten ab — ein neuer Ban fällt also weiterhin sofort auf. Die Einstellung steuert nur die Last auf der Instanz."
         }
       }
     },
     "error": {
       "timeout_too_long": "Das Zeitlimit muss kleiner als das Abfrageintervall sein, sonst überholen sich die Abfragezyklen.",
       "full_interval_too_short": "Die vollständige Alert-Aktualisierung darf nicht kürzer als das Abfrageintervall sein — sonst wäre jeder Zyklus eine Vollabfrage."
-    }
-  },
-  "selector": {
-    "decisions_scope": {
-      "options": {
-        "local": "Nur lokale (empfohlen)",
-        "all": "Alle, inklusive CAPI und Blocklisten"
-      }
     }
   },
   "issues": {

@@ -93,12 +93,21 @@ websocket / diagnostics.
 - **The lookup is not the table.** `crowdsec/ip/lookup` queries `/v1/decisions` with
   `ip=`/`range=` plus `contains=true`, which is what finds a range covering the address —
   the one thing the table structurally cannot show, since that row is about the range.
-  It deliberately ignores `decisions_scope`: the scope decides what is *listed*, while
+  It covers every origin, unlike the table: the table is a list of what can be acted on,
   the lookup answers whether an address is blocked at all. `origins` is *not* sent here.
-- **`decisions_scope` defaults to `local`.** The LAPI query then carries an `origins`
-  filter and `active_decisions` comes from the metric instead of the list length —
-  counting a filtered list would silently drop the CAPI and blocklist bans. The table
-  is capped at `MAX_DECISION_ROWS`.
+- **The ban table is local-only, always.** The LAPI query carries an `origins` filter,
+  but that parameter is honoured on some versions and ignored on others — the official
+  Go client lists it for `/v1/decisions/stream`, not for the list route. So
+  `build_table(local_only=True)` filters again on this side, over both sources: the
+  decision list *and* the alert history, which has no such filter at the LAPI at all.
+  `active_decisions` therefore comes from the `cs_active_decisions` metric, not from the
+  list length — counting a filtered list would silently drop the CAPI and blocklist bans.
+  The table is capped at `MAX_DECISION_ROWS`.
+- **The delete guard for an address asks the LAPI, not the table.** Since the table holds
+  local rows only, a purely central address is absent from it and a table-based check
+  would never fire — while the lookup card can show exactly such an address and offers
+  the unban behind it. The by-id path keeps a table check as a safety net; the LAPI has
+  no way to look a decision up by id.
 
 - **No LAPI pagination.** `/v1/alerts` silently truncates at `limit`. When that happens
   the client halves the time window and re-queries, up to `MAX_WINDOW_SPLITS` (4) levels

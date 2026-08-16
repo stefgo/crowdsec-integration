@@ -104,11 +104,17 @@ Bans** (`custom:crowdsec-bans-card`).
 | Origin | `local` (deletable), `CAPI` or `blocklist` |
 | Remaining | derived from `duration`, or from `until` where the LAPI sends it |
 
-The card opens on **active** decisions of **local** origin — that is what this
-Home Assistant owns and can act on. The CAPI and the blocklists contribute
-thousands of rows that can neither be removed nor read usefully, so by default
-the integration does not even fetch them; the integration option *Decisions in
-the card* brings them back if you want them listed.
+The table holds **local decisions only** — the ones this Home Assistant owns
+and can lift. The CAPI and the blocklists contribute thousands of rows that can
+neither be removed nor read usefully, and an address caught by a range from a
+blocklist would not be findable in a table anyway. That question belongs to the
+[lookup card](#lookup-card-is-this-address-blocked); this one stays a list of
+what you can act on. The integration does not fetch central decisions for it at
+all.
+
+Because of that the row count and the **Active decisions** sensor deliberately
+disagree: the sensor counts everything the LAPI enforces, the table shows the
+part you can do something about.
 
 Clicking a row opens the details — every raw field of the decision plus the
 alert context. The search box works over address, scenario, AS, country,
@@ -140,7 +146,6 @@ the visual editor — with the exception of `sort_desc`, which is YAML only.
 | `title` | string | localised | Heading of the card — "CrowdSec bans" / "CrowdSec-Sperren" when left out. The count line below it is not affected. |
 | `config_entry_id` | string | first instance | Which CrowdSec instance to show. Left out, the card takes the first loaded one; with more than one instance configured a picker appears in the header either way. Set it when a dashboard should always open on one particular engine. |
 | `status` | `active` \| `expired` \| `all` | `active` | Which rows the card opens with. `expired` shows the bans of the last 24 hours that have already run out, `all` both. The chips change it at runtime; anything else is refused when the card is saved. |
-| `origins` | list of `local`, `capi`, `lists` | `[local]` | Which origins the card opens with. `local` is what this Home Assistant can actually unban; `capi` and `lists` are pushed centrally. An empty list falls back to the default; an unknown name is refused when the card is saved. |
 | `sort` | see below | `seconds_left` | Column the table is sorted by. Clicking a column header changes it at runtime. |
 | `sort_desc` | boolean | `true` | Sort direction. With the default `seconds_left` this puts the bans with the most time left on top. |
 | `page_size` | number | `25` | Rows per page. The editor offers 5–200; in YAML anything from 1 up is accepted. This is the display page, unrelated to how the rows are fetched. |
@@ -157,22 +162,16 @@ type: custom:crowdsec-bans-card
 title: CrowdSec
 config_entry_id: 01JABCDEF0123456789ABCDEFG
 status: active
-origins: [local]
 sort: seconds_left
 sort_desc: true
 page_size: 25
 hide_filters: false
 ```
 
-Two of the card's behaviours are not card options but *integration* options,
-because they decide what is fetched in the first place (see
-[Configuration](#configuration)):
-
-* **Decisions in the card** — on `local only` the CAPI and blocklist chips
-  have nothing behind them. The card greys them out and says so in a tooltip
-  rather than emptying the table on a click.
-* **Full alert refresh** — how current the expired 24 h history is. The active
-  decisions come from the polling cycle either way.
+One behaviour is not a card option but an *integration* option, because it
+decides what is fetched in the first place: **Full alert refresh** governs how
+current the expired 24 h history is. The active decisions come from the polling
+cycle either way. See [Configuration](#configuration).
 
 ## Lookup card: is this address blocked?
 
@@ -200,9 +199,9 @@ request, made only when you ask:
 
 Two things are deliberately different from the table:
 
-* The lookup **ignores the `decisions_scope` option**. That option decides what
-  is listed; here the question is whether the address is blocked *at all*, so
-  every origin is queried regardless.
+* It covers **every origin** — local, CAPI and blocklists. The ban table is a
+  list of what you can act on; here the question is whether the address is
+  blocked *at all*, so nothing is filtered out.
 * It reads **live**, not from the polling cycle. Nothing is cached — a lookup
   costs one request and always shows the current state.
 
@@ -329,8 +328,8 @@ same text is on the release page of each version.
 Under *Configure* you can adjust the polling interval (default 60 s), the
 timeout per request (15 s), the threshold for the parse error rate (5 %), the
 number of intervals without bouncer queries before a problem is raised (5),
-the number of alerts per query (1000), how often the whole 24h alert window is
-refetched (300 s) and which decisions end up in the card (local only). The
+the number of alerts per query (1000) and how often the whole 24h alert window
+is refetched (300 s). The
 timeout applies per request and has to be lower than the polling interval —
 for an instance behind a VPN or a slow proxy a higher value helps. The three
 queries of a cycle run in parallel, so the timeouts do not add up.
@@ -340,21 +339,19 @@ the password or the bouncer key empty keeps the stored one.
 
 ### How much the instance is asked for
 
-Two settings decide that, and neither of them slows down how quickly a new ban
-is noticed:
+**Full alert refresh** is the one setting for it, and it does not slow down how
+quickly a new ban is noticed: the 24h numbers come from a window the
+integration keeps itself, refetched in full on this interval, while every cycle
+only asks for the minutes since the last one and merges the result in.
+Refetching 24 hours every minute transfers the same alerts over and over, and
+with the window splitting below that can be sixteen requests per cycle.
 
-* **Full alert refresh** — the 24h numbers come from a window the integration
-  keeps itself. It is refetched in full on this interval; in between, every
-  cycle only asks for the minutes since the last one and merges the result in.
-  Refetching 24 hours every minute transfers the same alerts over and over,
-  and with the window splitting below that can be sixteen requests per cycle.
-* **Decisions in the card** — `local only` fetches just the decisions made on
-  this instance, which are exactly the ones the card can lift. An instance
-  subscribed to a blocklist enforces hundreds of thousands of decisions that
-  no click can change; `Active decisions` keeps counting all of them through
-  the `cs_active_decisions` metric. Set it to `all` if you want CAPI and
-  blocklist entries listed too. The table stops at 2000 rows either way and
-  says so when it does.
+The decision query is restricted to local origins and needs no setting. An
+instance subscribed to a blocklist enforces hundreds of thousands of decisions
+that no click can change; `Active decisions` keeps counting all of them through
+the `cs_active_decisions` metric, and the lookup card answers any question
+about a specific address. The table stops at 2000 rows and says so when it
+does.
 
 ### Completeness of the 24h numbers
 

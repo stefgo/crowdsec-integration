@@ -24,9 +24,6 @@ export const EN = {
   "status.expired": "expired",
   "status.all": "all",
 
-  "origin.local": "Local",
-  "origin.capi": "CAPI",
-  "origin.lists": "Blocklists",
 
   "origin_label.manual": "manual",
   "origin_label.blocklist": "blocklist",
@@ -83,8 +80,6 @@ export const EN = {
     "More alerts than one query returns — the history is incomplete.",
   "notice.rows_truncated":
     "More decisions than the card keeps — showing the ones expiring last.",
-  "filter.origin_excluded":
-    "Not fetched: the integration option \"Decisions in the card\" is set to \"local only\".",
   "notice.removed": "Removed {count} decision(s).",
   "notice.removed_none":
     "CrowdSec removed nothing — the decision was already gone.",
@@ -111,7 +106,6 @@ export const EN = {
   "editor.title": "Title",
   "editor.instance": "Instance",
   "editor.status": "Show",
-  "editor.origins": "Origins",
   "editor.sort": "Sort by",
   "editor.page_size": "Rows per page",
   "editor.hide_filters": "Hide search and filters",
@@ -179,9 +173,6 @@ const DE: Partial<Record<TranslationKey, string>> = {
   "status.expired": "abgelaufen",
   "status.all": "alle",
 
-  "origin.local": "Lokal",
-  "origin.capi": "CAPI",
-  "origin.lists": "Blocklisten",
 
   "origin_label.manual": "manuell",
   "origin_label.blocklist": "Blockliste",
@@ -238,8 +229,6 @@ const DE: Partial<Record<TranslationKey, string>> = {
     "Mehr Alarme, als eine Abfrage liefert — die Historie ist unvollständig.",
   "notice.rows_truncated":
     "Mehr Entscheidungen, als die Card vorhält — gezeigt werden die zuletzt ablaufenden.",
-  "filter.origin_excluded":
-    "Wird nicht geladen: Die Integrations-Option „Decisions in der Card\" steht auf „Nur lokale\".",
   "notice.removed": "{count} Entscheidung(en) entfernt.",
   "notice.removed_none":
     "CrowdSec hat nichts entfernt — die Entscheidung war bereits weg.",
@@ -266,7 +255,6 @@ const DE: Partial<Record<TranslationKey, string>> = {
   "editor.title": "Titel",
   "editor.instance": "Instanz",
   "editor.status": "Anzeigen",
-  "editor.origins": "Herkunft",
   "editor.sort": "Sortieren nach",
   "editor.page_size": "Zeilen pro Seite",
   "editor.hide_filters": "Suche und Filter ausblenden",

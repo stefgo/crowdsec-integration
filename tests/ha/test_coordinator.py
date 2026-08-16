@@ -258,30 +258,8 @@ async def test_the_query_is_restricted_to_local_origins_by_default(
     assert fake_client.decision_queries[0] == LOCAL_ORIGINS
 
 
-async def test_the_scope_option_can_ask_for_everything(hass, config_entry, fake_client):
-    from unittest.mock import AsyncMock, patch
-
-    config_entry.add_to_hass(hass)
-    hass.config_entries.async_update_entry(
-        config_entry, options={"decisions_scope": "all"}
-    )
-    with (
-        patch("custom_components.crowdsec.build_client", return_value=fake_client),
-        patch(
-            "custom_components.crowdsec._async_register_card",
-            AsyncMock(return_value=None),
-        ),
-    ):
-        await hass.config_entries.async_setup(config_entry.entry_id)
-        await hass.async_block_till_done()
-
-    assert fake_client.decision_queries[0] is None
-
-
-async def test_with_a_local_scope_the_metric_keeps_the_sensor(
-    hass, loaded_entry, fake_client
-):
-    """Counting the restricted list would lose the CAPI and blocklist bans."""
+async def test_the_metric_keeps_the_sensor(hass, loaded_entry, fake_client):
+    """Counting the local-only table would lose the CAPI and blocklist bans."""
     coordinator = loaded_entry.runtime_data
     fake_client.decisions = [make_decision(1), make_decision(2, ip="192.0.2.11")]
 
@@ -290,7 +268,24 @@ async def test_with_a_local_scope_the_metric_keeps_the_sensor(
     assert len(data.decisions) == 2
     # cs_active_decisions from the fixture says 7.
     assert data.active_decisions == 7
-    assert data.decisions_local_only is True
+
+
+async def test_central_decisions_never_reach_the_table(hass, loaded_entry, fake_client):
+    """The LAPI honours the origins filter on some versions and not on others.
+
+    Whichever it does, the card promises local decisions, so the table filters
+    again on this side.
+    """
+    coordinator = loaded_entry.runtime_data
+    fake_client.decisions = [
+        make_decision(1, ip="192.0.2.10", origin="cscli"),
+        make_decision(2, ip="192.0.2.0/24", origin="lists"),
+        make_decision(3, ip="192.0.2.30", origin="CAPI"),
+    ]
+
+    data = await refresh(hass, coordinator)
+
+    assert [row.value for row in data.decisions] == ["192.0.2.10"]
 
 
 async def test_the_table_is_capped(hass, loaded_entry, fake_client):

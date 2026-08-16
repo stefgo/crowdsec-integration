@@ -385,17 +385,33 @@ def build_table(
     alerts: Iterable[dict[str, Any]],
     now: datetime | None = None,
     include_history: bool = True,
+    local_only: bool = False,
 ) -> list[DecisionRecord]:
-    """Everything the card shows, in one list, newest expiry first."""
+    """Everything the card shows, in one list, newest expiry first.
+
+    ``local_only`` drops everything pushed centrally, from both sources: the
+    LAPI honours the ``origins`` filter on some versions and ignores it on
+    others, and the alert history has no such filter at all — an expired CAPI
+    ban would otherwise slip into a table that promises local decisions.
+    """
     moment = now or datetime.now(UTC)
     alert_list = [alert for alert in alerts if isinstance(alert, dict)]
 
     index = build_source_index(alert_list)
     active = normalize_decisions(raw_decisions, moment, index)
+    if local_only:
+        active = [
+            record for record in active if record.origin_kind == ORIGIN_KIND_LOCAL
+        ]
 
     rows = list(active)
     if include_history:
-        rows.extend(history_from_alerts(alert_list, active, moment))
+        history = history_from_alerts(alert_list, active, moment)
+        if local_only:
+            history = [
+                record for record in history if record.origin_kind == ORIGIN_KIND_LOCAL
+            ]
+        rows.extend(history)
 
     # Active first, then by remaining time — that is the order someone
     # skimming the table for "who is banned right now" expects.

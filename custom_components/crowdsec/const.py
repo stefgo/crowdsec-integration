@@ -42,7 +42,6 @@ CONF_PARSE_ERROR_THRESHOLD = "parse_error_threshold"
 CONF_BOUNCER_IDLE_INTERVALS = "bouncer_idle_intervals"
 CONF_ALERTS_LIMIT = "alerts_limit"
 CONF_ALERTS_FULL_INTERVAL = "alerts_full_interval"
-CONF_DECISIONS_SCOPE = "decisions_scope"
 
 # --- Defaults -------------------------------------------------------------
 DEFAULT_NAME = "CrowdSec"
@@ -102,15 +101,13 @@ ORIGIN_KIND_LOCAL = "local"
 ORIGIN_KIND_CAPI = "capi"
 ORIGIN_KIND_LISTS = "lists"
 
-# The origins CrowdSec uses for decisions made on the instance itself. The LAPI
-# takes them as an ``origins`` filter, which is what keeps a subscribed
-# blocklist with a few hundred thousand addresses out of every update cycle.
+# The origins CrowdSec uses for decisions made on the instance itself. These are
+# the only decisions the ban table shows and the only ones it can lift; the
+# lookup card answers the "is this address blocked by anyone" question instead.
+# Passed to the LAPI as an ``origins`` filter where it is honoured, which keeps
+# a subscribed blocklist out of the update cycle; the table filters again on
+# this side, so the result is the same either way.
 LOCAL_ORIGINS = ("crowdsec", "cscli", "console", "cscli-import")
-
-# Which decisions end up in the card's table.
-DECISIONS_SCOPE_LOCAL = "local"
-DECISIONS_SCOPE_ALL = "all"
-DEFAULT_DECISIONS_SCOPE = DECISIONS_SCOPE_LOCAL
 
 # Upper bound on the rows of the table. A browser is not going to render a
 # hundred thousand rows usefully, and the whole list travels through the

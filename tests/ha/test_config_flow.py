@@ -209,13 +209,11 @@ async def test_the_options_are_stored(hass, loaded_entry):
                 "bouncer_idle_intervals": 3,
                 "alerts_limit": 500,
                 "alerts_full_interval": 600,
-                "decisions_scope": "all",
             },
         )
         await hass.async_block_till_done()
 
     assert done["type"] is FlowResultType.CREATE_ENTRY
-    assert loaded_entry.options["decisions_scope"] == "all"
     assert loaded_entry.options["alerts_full_interval"] == 600
 
 
@@ -232,7 +230,6 @@ async def test_a_timeout_above_the_interval_is_refused(hass, loaded_entry):
             "bouncer_idle_intervals": 5,
             "alerts_limit": 1000,
             "alerts_full_interval": 300,
-            "decisions_scope": "local",
         },
     )
 
@@ -253,7 +250,6 @@ async def test_a_full_refresh_below_the_interval_is_refused(hass, loaded_entry):
             "bouncer_idle_intervals": 5,
             "alerts_limit": 1000,
             "alerts_full_interval": 120,
-            "decisions_scope": "local",
         },
     )
 

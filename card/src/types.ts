@@ -38,8 +38,6 @@ export interface DecisionsResponse {
   alerts_truncated: boolean;
   /** The table hit the integration's row cap — there are more decisions. */
   decisions_truncated: boolean;
-  /** Only locally created decisions are fetched; CAPI and blocklists are out. */
-  local_only: boolean;
   last_update: string | null;
 }
 
@@ -106,8 +104,6 @@ export interface CrowdSecBansCardConfig {
   config_entry_id?: string;
   /** Status filter the card opens with. */
   status?: DecisionStatus | "all";
-  /** Origins active initially; all three if omitted. */
-  origins?: OriginKind[];
   /** Rows per page. */
   page_size?: number;
   /** Hide the search field and the filter chips — for a compact dashboard. */

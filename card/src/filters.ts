@@ -5,14 +5,11 @@
  * WebSocket call, so a keystroke must not cost a round trip.
  */
 
-import type { Decision, DecisionStatus, OriginKind, SortColumn } from "./types";
-
-export const ORIGIN_KINDS: OriginKind[] = ["local", "capi", "lists"];
+import type { Decision, DecisionStatus, SortColumn } from "./types";
 
 export interface FilterState {
   search: string;
   status: DecisionStatus | "all";
-  origins: OriginKind[];
   types: string[];
   scopes: string[];
   /** Only rows the card could actually unban. */
@@ -28,7 +25,6 @@ export interface FilterState {
 export const emptyFilter = (): FilterState => ({
   search: "",
   status: "active",
-  origins: ["local"],
   types: [],
   scopes: [],
   deletableOnly: false,
@@ -67,7 +63,6 @@ export function applyFilters(
 ): Decision[] {
   return decisions.filter((decision) => {
     if (state.status !== "all" && decision.status !== state.status) return false;
-    if (!state.origins.includes(decision.origin_kind)) return false;
     if (state.deletableOnly && !decision.deletable) return false;
     if (state.types.length && !state.types.includes(decision.type ?? "")) {
       return false;
@@ -135,9 +130,6 @@ export interface Counts {
   total: number;
   active: number;
   expired: number;
-  local: number;
-  capi: number;
-  lists: number;
 }
 
 /** The numbers for the header line — always over the unfiltered list. */
@@ -146,13 +138,9 @@ export function countDecisions(decisions: Decision[]): Counts {
     total: decisions.length,
     active: 0,
     expired: 0,
-    local: 0,
-    capi: 0,
-    lists: 0,
   };
   for (const decision of decisions) {
     counts[decision.status] += 1;
-    counts[decision.origin_kind] += 1;
   }
   return counts;
 }

@@ -4,7 +4,6 @@ import { LitElement, html, nothing } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
 
 import { fetchInstances } from "./api";
-import { ORIGIN_KINDS } from "./filters";
 import { Localizer, TranslationKey, createLocalizer } from "./localize";
 import type { CrowdSecBansCardConfig, HomeAssistant, Instance } from "./types";
 
@@ -57,19 +56,6 @@ export class CrowdSecBansCardEditor extends LitElement {
               { value: "expired", label: t("editor.status.expired") },
               { value: "all", label: t("editor.status.all") },
             ],
-          },
-        },
-      },
-      {
-        name: "origins",
-        selector: {
-          select: {
-            multiple: true,
-            mode: "list",
-            options: ORIGIN_KINDS.map((kind) => ({
-              value: kind,
-              label: t(`origin.${kind}` as TranslationKey),
-            })),
           },
         },
       },

@@ -20,9 +20,6 @@ from homeassistant.helpers.selector import (
     NumberSelector,
     NumberSelectorConfig,
     NumberSelectorMode,
-    SelectSelector,
-    SelectSelectorConfig,
-    SelectSelectorMode,
     TextSelector,
     TextSelectorConfig,
     TextSelectorType,
@@ -41,18 +38,14 @@ from .const import (
     CONF_ALERTS_LIMIT,
     CONF_BOUNCER_API_KEY,
     CONF_BOUNCER_IDLE_INTERVALS,
-    CONF_DECISIONS_SCOPE,
     CONF_LAPI_URL,
     CONF_MACHINE_ID,
     CONF_MACHINE_PASSWORD,
     CONF_METRICS_URL,
     CONF_PARSE_ERROR_THRESHOLD,
-    DECISIONS_SCOPE_ALL,
-    DECISIONS_SCOPE_LOCAL,
     DEFAULT_ALERTS_FULL_INTERVAL,
     DEFAULT_ALERTS_LIMIT,
     DEFAULT_BOUNCER_IDLE_INTERVALS,
-    DEFAULT_DECISIONS_SCOPE,
     DEFAULT_LAPI_PORT,
     DEFAULT_METRICS_PORT,
     DEFAULT_NAME,
@@ -92,14 +85,6 @@ ALERTS_LIMIT_SELECTOR = NumberSelector(
 ALERTS_FULL_INTERVAL_SELECTOR = NumberSelector(
     NumberSelectorConfig(
         min=60, max=3600, step=30, mode=NumberSelectorMode.BOX, unit_of_measurement="s"
-    )
-)
-
-DECISIONS_SCOPE_SELECTOR = SelectSelector(
-    SelectSelectorConfig(
-        options=[DECISIONS_SCOPE_LOCAL, DECISIONS_SCOPE_ALL],
-        mode=SelectSelectorMode.DROPDOWN,
-        translation_key=CONF_DECISIONS_SCOPE,
     )
 )
 
@@ -404,10 +389,6 @@ class CrowdSecOptionsFlow(OptionsFlow):
                         CONF_ALERTS_FULL_INTERVAL, DEFAULT_ALERTS_FULL_INTERVAL
                     ),
                 ): ALERTS_FULL_INTERVAL_SELECTOR,
-                vol.Required(
-                    CONF_DECISIONS_SCOPE,
-                    default=options.get(CONF_DECISIONS_SCOPE, DEFAULT_DECISIONS_SCOPE),
-                ): DECISIONS_SCOPE_SELECTOR,
             }
         )
         return self.async_show_form(step_id="init", data_schema=schema, errors=errors)

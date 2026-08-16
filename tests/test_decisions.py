@@ -264,3 +264,62 @@ def test_as_dict_is_json_ready():
     assert payload["seconds_left"] == 14398
     assert isinstance(payload["until"], str)
     assert payload["deletable"] is True
+
+
+# -- Keeping central decisions out of the table -----------------------------
+
+
+def test_local_only_drops_central_decisions():
+    """The LAPI honours the origins filter on some versions and not on others."""
+    rows = build_table(
+        [
+            make_decision(value="192.0.2.1", origin="cscli"),
+            make_decision(value="192.0.2.2", origin="CAPI"),
+            make_decision(value="192.0.2.0/24", origin="lists"),
+            make_decision(value="192.0.2.3", origin="crowdsec"),
+        ],
+        [],
+        NOW,
+        local_only=True,
+    )
+
+    assert sorted(row.value for row in rows) == ["192.0.2.1", "192.0.2.3"]
+
+
+def test_local_only_also_filters_the_history():
+    """The alert history has no origins filter at the LAPI at all."""
+    alerts = [
+        {
+            "id": 1,
+            "created_at": "2026-08-15T06:00:00Z",
+            "scenario": "crowdsecurity/ssh-bf",
+            "source": {"value": "192.0.2.9"},
+            "decisions": [
+                {
+                    "type": "ban",
+                    "duration": "1h",
+                    "value": "192.0.2.9",
+                    "origin": "CAPI",
+                }
+            ],
+        }
+    ]
+
+    with_history = build_table([], alerts, NOW)
+    local_history = build_table([], alerts, NOW, local_only=True)
+
+    assert [row.value for row in with_history] == ["192.0.2.9"]
+    assert local_history == []
+
+
+def test_without_local_only_everything_stays():
+    rows = build_table(
+        [
+            make_decision(value="192.0.2.1", origin="cscli"),
+            make_decision(value="192.0.2.2", origin="CAPI"),
+        ],
+        [],
+        NOW,
+    )
+
+    assert len(rows) == 2

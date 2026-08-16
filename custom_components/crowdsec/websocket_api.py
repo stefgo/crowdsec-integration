@@ -22,7 +22,6 @@ from .const import (
     DEFAULT_BAN_DURATION,
     DEFAULT_BAN_REASON,
     DOMAIN,
-    ORIGIN_KIND_LOCAL,
     WS_DECISIONS_DELETE,
     WS_DECISIONS_LIST,
     WS_INSTANCES,
@@ -162,7 +161,6 @@ async def ws_decisions_list(
             # The table itself hit the row cap — there are more decisions than
             # are being kept, never mind paged.
             "decisions_truncated": data.decisions_truncated,
-            "local_only": data.decisions_local_only,
             "last_update": (data.last_update.isoformat() if data.last_update else None),
         },
     )
@@ -197,28 +195,14 @@ async def ws_decisions_delete(
         )
         return
 
-    targets: set[str] = set()
-    if ip is not None:
-        # The same check the services do. The card only ever sends addresses it
-        # got from the table, but a WebSocket command is a public interface —
-        # an unchecked value would go straight to the LAPI.
-        try:
-            normalized = normalize_ip_target(ip)
-        except ValueError as err:
-            connection.send_error(msg["id"], "invalid_target", str(err))
-            return
-        # Both spellings count when looking for the rows: CrowdSec stores the
-        # address the way it received it, which does not have to match the
-        # normal form (``2001:0db8::1`` vs. ``2001:db8::1``).
-        targets = {ip.strip(), normalized}
-        ip = normalized
-
     rows = coordinator.data.decisions if coordinator.data else []
     if decision_id is not None:
         target = next((row for row in rows if row.decision_id == decision_id), None)
         if target is not None and not target.deletable:
-            # CAPI and blocklist decisions are pushed by the central API; a
-            # local delete would be undone by the next pull.
+            # A safety net rather than the main guard: the table is local-only,
+            # so an id taken from it belongs to a deletable row anyway. The
+            # address path below is where a central decision actually gets
+            # caught — the LAPI offers no way to look one up by id.
             connection.send_error(
                 msg["id"],
                 "not_deletable",
@@ -227,10 +211,27 @@ async def ws_decisions_delete(
             )
             return
     else:
-        matching = [row for row in rows if row.value in targets]
-        if matching and not any(
-            row.origin_kind == ORIGIN_KIND_LOCAL for row in matching
-        ):
+        # The same check the services do. The card only ever sends addresses it
+        # got from a table, but a WebSocket command is a public interface —
+        # an unchecked value would go straight to the LAPI.
+        try:
+            ip = normalize_ip_target(ip)
+        except ValueError as err:
+            connection.send_error(msg["id"], "invalid_target", str(err))
+            return
+
+        # Asked live rather than read off the table: the table holds local
+        # decisions only, so a purely central address is simply absent from it
+        # and the guard below would never fire. The lookup card can show
+        # exactly such an address, and this is the command behind its unban.
+        try:
+            existing = await coordinator.client.async_lookup_ip(ip)
+        except (CrowdSecAuthError, CrowdSecConnectionError) as err:
+            connection.send_error(msg["id"], "request_failed", str(err))
+            return
+
+        report = build_ip_report(ip, existing or [], [])
+        if report.blocked and not report.deletable:
             connection.send_error(
                 msg["id"],
                 "not_deletable",

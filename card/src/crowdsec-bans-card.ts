@@ -22,7 +22,6 @@ import {
 import {
   Counts,
   FilterState,
-  ORIGIN_KINDS,
   applyFilters,
   countDecisions,
   distinctValues,
@@ -44,7 +43,6 @@ import type {
   DecisionStatus,
   HomeAssistant,
   Instance,
-  OriginKind,
   SortColumn,
 } from "./types";
 
@@ -84,22 +82,12 @@ export class CrowdSecBansCard extends LitElement {
   @state() private _error: string | null = null;
   @state() private _notice: string | null = null;
   @state() private _lastUpdate: string | null = null;
-  // The integration can be set to fetch only locally created decisions.
-  // The origin chips have to say so, otherwise clicking CAPI or Lists
-  // silently shows an empty table.
-  @state() private _localOnly = false;
 
   private _started = false;
 
   public setConfig(config: CrowdSecBansCardConfig): void {
     if (config.status && !STATUS_OPTIONS.includes(config.status)) {
       throw new Error(`Unknown status: ${config.status}`);
-    }
-    const unknown = (config.origins ?? []).filter(
-      (origin) => !ORIGIN_KINDS.includes(origin),
-    );
-    if (unknown.length) {
-      throw new Error(`Unknown origins: ${unknown.join(", ")}`);
     }
     if (config.page_size !== undefined && config.page_size < 1) {
       throw new Error(`Invalid page_size: ${config.page_size}`);
@@ -109,14 +97,7 @@ export class CrowdSecBansCard extends LitElement {
     this._sort = config.sort ?? "seconds_left";
     this._sortDesc = config.sort_desc ?? true;
     const defaults = emptyFilter();
-    this._filter = {
-      ...defaults,
-      status: config.status ?? defaults.status,
-      // The order comes from ORIGIN_KINDS so the chips never move around.
-      origins: config.origins?.length
-        ? ORIGIN_KINDS.filter((kind) => config.origins!.includes(kind))
-        : defaults.origins,
-    };
+    this._filter = { ...defaults, status: config.status ?? defaults.status };
     if (config.config_entry_id) {
       this._entryId = config.config_entry_id;
     }
@@ -165,7 +146,6 @@ export class CrowdSecBansCard extends LitElement {
       const result = await fetchAllDecisions(this.hass, this._entryId, refresh);
       this._decisions = result.decisions;
       this._lastUpdate = result.last_update;
-      this._localOnly = result.local_only;
       this._notice = !result.reachable
         ? t("notice.unreachable")
         : !result.available
@@ -227,19 +207,6 @@ export class CrowdSecBansCard extends LitElement {
     // Any change to the selection invalidates the page number — page 4 of a
     // three-row result would just be empty.
     this._page = 0;
-  }
-
-  private _toggleOrigin(kind: OriginKind): void {
-    const active = this._filter.origins.includes(kind);
-    const next = active
-      ? this._filter.origins.filter((item) => item !== kind)
-      : ORIGIN_KINDS.filter(
-          (item) => item === kind || this._filter.origins.includes(item),
-        );
-    // Deselecting the last chip would show nothing at all; that is never what
-    // the click meant, so it stays as it was.
-    if (!next.length) return;
-    this._patchFilter({ origins: next });
   }
 
   private _toggleValue(field: "types" | "scopes", value: string): void {
@@ -354,7 +321,6 @@ export class CrowdSecBansCard extends LitElement {
             ${t("card.counts", {
               active: counts.active,
               expired: counts.expired,
-              local: counts.local,
             })}
           </div>
         </div>
@@ -417,27 +383,6 @@ export class CrowdSecBansCard extends LitElement {
               ${t(`status.${status}` as TranslationKey)}
             </button>`,
           )}
-          <span class="divider"></span>
-          ${ORIGIN_KINDS.map((kind) => {
-            // With the integration set to "local only" there is nothing behind
-            // the CAPI and blocklist chips. Disabling them with a reason beats
-            // letting the click empty the table without explanation, and beats
-            // hiding them — that would only move the question.
-            const empty = counts[kind] === 0;
-            const excluded = this._localOnly && kind !== "local" && empty;
-            return html`<button
-              class="chip ${this._filter.origins.includes(kind) ? "active" : ""} ${
-                excluded ? "excluded" : ""
-              }"
-              ?disabled=${excluded}
-              title=${excluded ? t("filter.origin_excluded") : nothing}
-              @click=${() => this._toggleOrigin(kind)}
-            >
-              ${t(`origin.${kind}` as TranslationKey)}${
-                excluded ? html` <span class="hint-mark">·</span>` : nothing
-              }
-            </button>`;
-          })}
           ${types.length > 1
             ? html`<span class="divider"></span>
                 ${types.map(
@@ -783,16 +728,6 @@ export class CrowdSecBansCard extends LitElement {
       color: #fff;
       font-weight: 600;
     }
-    /* Not "broken", just empty by configuration — it stays readable and
-       keeps its tooltip, but does not invite a click. */
-    .chip.excluded {
-      opacity: 0.45;
-      cursor: help;
-    }
-    .hint-mark {
-      font-weight: 700;
-    }
-
     .chip:not(.active) {
       opacity: 0.7;
     }

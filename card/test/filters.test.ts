@@ -63,20 +63,12 @@ describe("filters", () => {
     decision({ key: "d", type: "captcha" }),
   ];
 
-  it("opens on the active, local decisions", () => {
-    // The CAPI and the blocklists contribute thousands of rows nobody can act
-    // on — they are one chip away, not the first thing on screen.
+  it("opens on the active decisions", () => {
+    // The integration only ever sends local decisions to this card, so there
+    // is no origin filter left here — "is this address blocked by anyone" is
+    // the lookup card's question.
     const result = applyFilters(rows, emptyFilter());
-    expect(result.map((row) => row.key)).toEqual(["a", "d"]);
-  });
-
-  it("filters by origin", () => {
-    const result = applyFilters(rows, {
-      ...emptyFilter(),
-      status: "all",
-      origins: ["capi"],
-    });
-    expect(result.map((row) => row.key)).toEqual(["c"]);
+    expect(result.map((row) => row.key)).toEqual(["a", "c", "d"]);
   });
 
   it("filters by type", () => {
@@ -84,12 +76,8 @@ describe("filters", () => {
     expect(result.map((row) => row.key)).toEqual(["d"]);
   });
 
-  it("shows everything once all chips are on", () => {
-    const result = applyFilters(rows, {
-      ...emptyFilter(),
-      status: "all",
-      origins: ["local", "capi", "lists"],
-    });
+  it("shows everything with the status chip on 'all'", () => {
+    const result = applyFilters(rows, { ...emptyFilter(), status: "all" });
     expect(result.map((row) => row.key)).toEqual(["a", "b", "c", "d"]);
   });
 
@@ -154,14 +142,7 @@ describe("counts", () => {
       decision({ status: "expired" }),
       decision({ origin_kind: "capi" }),
     ]);
-    expect(counts).toEqual({
-      total: 3,
-      active: 2,
-      expired: 1,
-      local: 2,
-      capi: 1,
-      lists: 0,
-    });
+    expect(counts).toEqual({ total: 3, active: 2, expired: 1 });
   });
 });
 

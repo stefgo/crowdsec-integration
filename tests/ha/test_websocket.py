@@ -66,7 +66,6 @@ async def test_the_list_reports_the_total_next_to_the_page(
     assert result["success"]
     assert len(result["result"]["decisions"]) == 5
     assert result["result"]["total"] == 20
-    assert result["result"]["local_only"] is True
 
 
 async def test_the_offset_walks_through_the_table(hass, ws, loaded_entry, fake_client):
@@ -155,32 +154,18 @@ async def test_a_local_decision_can_be_removed(hass, ws, loaded_entry, fake_clie
     assert "total" in result["result"]
 
 
-async def test_a_capi_decision_is_refused(hass, ws, loaded_entry, fake_client):
-    """Deleting it locally would only last until the next pull."""
-    fake_client.decisions = [make_decision(2, ip="192.0.2.20", origin="CAPI")]
-    await loaded_entry.runtime_data.async_refresh()
+async def test_a_central_address_is_refused(hass, ws, loaded_entry, fake_client):
+    """Deleting it locally would only last until the next pull.
 
-    result = await send(
-        ws,
-        {
-            "type": WS_DECISIONS_DELETE,
-            "config_entry_id": loaded_entry.entry_id,
-            "decision_id": 2,
-        },
-    )
-
-    assert not result["success"]
-    assert result["error"]["code"] == "not_deletable"
-
-
-async def test_an_address_with_only_central_decisions_is_refused(
-    hass, ws, loaded_entry, fake_client
-):
-    fake_client.decisions = [
+    The check asks the LAPI rather than the table: the table holds local
+    decisions only, so a purely central address is simply not in it. This is
+    the command behind the lookup card's unban, and that card *can* show such
+    an address.
+    """
+    fake_client.lookup_decisions = [
         make_decision(3, ip="192.0.2.30", origin="lists"),
         make_decision(4, ip="192.0.2.30", origin="CAPI"),
     ]
-    await loaded_entry.runtime_data.async_refresh()
 
     result = await send(
         ws,
@@ -198,11 +183,10 @@ async def test_an_address_with_only_central_decisions_is_refused(
 async def test_an_address_with_one_local_decision_may_go(
     hass, ws, loaded_entry, fake_client
 ):
-    fake_client.decisions = [
+    fake_client.lookup_decisions = [
         make_decision(5, ip="192.0.2.40", origin="CAPI"),
         make_decision(6, ip="192.0.2.40", origin="cscli"),
     ]
-    await loaded_entry.runtime_data.async_refresh()
 
     result = await send(
         ws,
@@ -210,6 +194,22 @@ async def test_an_address_with_one_local_decision_may_go(
             "type": WS_DECISIONS_DELETE,
             "config_entry_id": loaded_entry.entry_id,
             "ip": "192.0.2.40",
+        },
+    )
+
+    assert result["success"]
+
+
+async def test_an_unknown_address_is_not_refused(hass, ws, loaded_entry, fake_client):
+    """Nothing found means nothing to protect — let the LAPI have the last word."""
+    fake_client.lookup_decisions = []
+
+    result = await send(
+        ws,
+        {
+            "type": WS_DECISIONS_DELETE,
+            "config_entry_id": loaded_entry.entry_id,
+            "ip": "192.0.2.99",
         },
     )
 

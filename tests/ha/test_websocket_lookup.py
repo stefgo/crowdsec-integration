@@ -55,8 +55,8 @@ async def test_a_covering_range_is_found(ws, loaded_entry, fake_client):
     assert result["result"]["deletable"] is False
 
 
-async def test_the_lookup_ignores_the_configured_scope(ws, loaded_entry, fake_client):
-    """decisions_scope filters the table, never the question about one address."""
+async def test_the_lookup_covers_every_origin(ws, loaded_entry, fake_client):
+    """The table is local-only; this question is never restricted."""
     fake_client.lookup_decisions = [make_decision(1, ip="192.0.2.10", origin="CAPI")]
 
     result = await lookup(ws, loaded_entry)

@@ -16,15 +16,16 @@ without one.
   range against every source — local decisions, CAPI and blocklists — and
   finds a range that contains it, which the ban table structurally cannot
   show. Includes the 24 h alert history for the address, plus ban and unban.
-  It queries live and ignores `decisions_scope`, because the question is
-  whether the address is blocked at all.
+  It queries live and covers every origin, because the question is whether the
+  address is blocked at all — unlike the ban table, which lists what can be
+  acted on.
 - Reconfigure flow: addresses and credentials of an existing instance can be
   changed in place instead of deleting the entry and setting it up again.
   Leaving a secret field empty keeps the stored value.
 - Repair issue when the LAPI refuses the decision list to the machine token.
   It offers to add a bouncer API key and checks it before storing it — so far
   the reason for an empty ban table sat in a log warning.
-- Option `decisions_scope` and option `alerts_full_interval` (see below).
+- Option `alerts_full_interval` (see below).
 - Tests for everything with a Home Assistant dependency (`tests/ha/`), plus
   ruff, mypy, coverage and dependabot in CI.
 
@@ -36,11 +37,12 @@ without one.
   refreshes it every `alerts_full_interval` seconds (default 300), and each
   cycle only asks for the minutes since the last one. A new ban is still
   noticed within one cycle.
-- **Only local decisions are fetched by default** (`decisions_scope`). An
-  instance subscribed to a blocklist enforces hundreds of thousands of
-  decisions, and none of them can be lifted from the card anyway. The "Active
-  decisions" sensor keeps counting all of them via the metric. Set the option
-  to `all` for the previous behaviour.
+- **The ban card shows local decisions only.** An instance subscribed to a
+  blocklist enforces hundreds of thousands of decisions, none of which can be
+  lifted from the card, and an address caught by a range would not be findable
+  in a table anyway — the lookup card answers that instead. The origin filter
+  chips and the card's `origins` option are gone with it, and the "Active
+  decisions" sensor keeps counting everything via the metric.
 - The card's table is capped at 2000 rows and the rows travel through the
   WebSocket connection page by page instead of in one message.
 - The diagnostics no longer contain the LAPI and metrics host names; scheme,
