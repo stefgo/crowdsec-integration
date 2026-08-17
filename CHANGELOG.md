@@ -8,6 +8,53 @@ The section headings have to match the release tags: the release workflow
 reads the section for the tag it was started with and refuses to publish
 without one.
 
+## [1.3.0] – 2026-08-17
+
+### Changed
+
+- **A sensor now waits on the query its value comes from, not on the cycle as
+  a whole.** Each update makes three independent requests, and a single one
+  failing used to mark *every* measured value `unavailable` — an alert
+  timeout blanked the counters of a metrics scrape that had just succeeded and
+  tore a gap into the recorder's statistics for data that was never in doubt.
+  With the alert route stuck, `New bans (24 h)` and the three `Top …` sensors
+  go unavailable while `Active decisions`, `Lines per minute` and the rest keep
+  updating. A failing decision query no longer touches any sensor at all — the
+  ban table travels over the WebSocket.
+- **`Reachable` means the instance answered at all**, which is the question a
+  connectivity sensor is about. It used to mean "all three queries came back"
+  and switched off over a single stuck route. That a route is stuck is now
+  reported by `Status`, whose `reasons` attribute names it — it lists every
+  failed query regardless of reachability, so a permanently broken alert route
+  can no longer pass unnoticed behind working metrics.
+- `Last update` keeps the strict meaning: the last cycle in which *everything*
+  came back, since that is what an automation compares against to spot stale
+  values. `Last restart` and `Last alert` are carried over from the previous
+  cycle only when their own query failed — a working alert query with an empty
+  24 h window has to be able to clear the timestamp instead of freezing it.
+
+### Fixed
+
+- **Diagnostics handed out the banned addresses.** The redaction replaced the
+  `value` of every table row but left `key`, which is assembled from the
+  address itself (`hist:<ip>:…`, `val:<origin>:<ip>`). Diagnostics get pasted
+  into public issues. The key now keeps only its kind; a decision ID, which is
+  not an address, stays readable.
+- **A ban that worked could be reported as a failure.** After placing the ban
+  the command reads the state back for the card, and that read sat outside the
+  error handling — a hiccup right after a successful ban surfaced as an error,
+  telling the user the opposite of what had happened. The read-back can no
+  longer fail the command; a lost answer is flagged the same way the lookup
+  flags it, so the card says "cannot tell" instead of guessing.
+- The card header printed a literal `{local}`: the text carried a third
+  placeholder that the card never filled.
+- The instance picker of the bans card showed the wrong entry. The selection
+  was set as a property on the `<select>` before its `<option>` elements
+  existed, so it fell back to the first one and never corrected itself.
+- The lookup card offered an unban button that did nothing for a local
+  decision the LAPI does not know by ID. It now falls back to the route by
+  address, the same way the ban table already did.
+
 ## [1.2.0] – 2026-08-17
 
 ### Added
@@ -102,7 +149,8 @@ without one.
   sensors for the Prometheus metrics, a problem indicator, services and an
   event on a new ban.
 
-[unreleased]: https://github.com/stefgo/ha-crowdsec-integration/compare/v1.2.0...HEAD
+[unreleased]: https://github.com/stefgo/ha-crowdsec-integration/compare/v1.3.0...HEAD
+[1.3.0]: https://github.com/stefgo/ha-crowdsec-integration/releases/tag/v1.3.0
 [1.2.0]: https://github.com/stefgo/ha-crowdsec-integration/releases/tag/v1.2.0
 [1.1.0]: https://github.com/stefgo/ha-crowdsec-integration/releases/tag/v1.1.0
 [1.0.1]: https://github.com/stefgo/ha-crowdsec-integration/releases/tag/1.0.1
