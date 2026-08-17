@@ -187,21 +187,28 @@ export class CrowdSecIpLookupCard extends LitElement {
   /** Remove one decision — the same action the ban table offers per row. */
   private async _unbanRow(row: Decision): Promise<void> {
     const t = this._t;
-    if (!this.hass || !this._entryId || row.id === null) return;
+    if (!this.hass || !this._entryId || !row.value) return;
     const target = t("action.target_one", {
       type: row.type ?? "",
-      ip: row.value ?? "",
+      ip: row.value,
     });
     if (!confirm(t("action.confirm", { target }))) return;
 
     this._busy = true;
     this._error = null;
     try {
-      const result = await deleteDecision(this.hass, this._entryId, row.id);
+      // A row is offered for unban by its origin, which says nothing about
+      // whether the LAPI knows it by ID. Without one the route by address is
+      // all there is — the same fallback the ban table takes, rather than a
+      // button that quietly does nothing.
+      const result =
+        row.id === null
+          ? await deleteForIp(this.hass, this._entryId, row.value)
+          : await deleteDecision(this.hass, this._entryId, row.id);
       this._notice = t("lookup.unbanned", { count: result.deleted });
       // Ask again instead of dropping the row: another decision may still
       // cover the address, and then it is not free at all.
-      this._report = await lookupIp(this.hass, this._entryId, row.value ?? "");
+      this._report = await lookupIp(this.hass, this._entryId, row.value);
     } catch (err) {
       this._error = this._message(err);
     } finally {

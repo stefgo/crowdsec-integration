@@ -44,6 +44,20 @@ def _redact_host(url: Any) -> Any:
     return urlunsplit((parts.scheme, netloc, parts.path, parts.query, parts.fragment))
 
 
+def _redact_key(key: Any) -> Any:
+    """Keep what kind of row a key describes, drop the address inside it.
+
+    Only the ``id:`` keys are built from the decision ID; the other two are
+    assembled from the address itself (``val:<origin>:<ip>``,
+    ``hist:<ip>:<scenario>:<timestamp>``). Redacting ``value`` alone would
+    therefore leave the address in plain sight one field further along.
+    """
+    if not isinstance(key, str) or key.startswith("id:"):
+        return key
+    prefix, separator, _ = key.partition(":")
+    return f"{prefix}:**REDACTED**" if separator else "**REDACTED**"
+
+
 def _redact_addresses(data: dict[str, Any]) -> None:
     """Replace IP addresses with placeholders; the counts are preserved."""
     if isinstance(data.get("top_attackers"), list):
@@ -63,9 +77,10 @@ def _redact_addresses(data: dict[str, Any]) -> None:
                 **{
                     key: value
                     for key, value in entry.items()
-                    if key not in ("value", "as_name", "as_number")
+                    if key not in ("value", "as_name", "as_number", "key")
                 },
                 "value": "**REDACTED**",
+                "key": _redact_key(entry.get("key")),
             }
             if isinstance(entry, dict)
             else entry

@@ -13,7 +13,7 @@ import type { HomeAssistant } from "./types";
 
 export const EN = {
   "card.title": "CrowdSec bans",
-  "card.counts": "{active} active · {expired} expired · {local} local",
+  "card.counts": "{active} active · {expired} expired",
   "card.refresh": "Refresh",
   "card.refreshing": "Refreshing …",
   "card.last_poll": "Last successful poll",
@@ -156,7 +156,7 @@ export type TranslationKey = keyof typeof EN;
 
 const DE: Partial<Record<TranslationKey, string>> = {
   "card.title": "CrowdSec-Sperren",
-  "card.counts": "{active} aktiv · {expired} abgelaufen · {local} lokal",
+  "card.counts": "{active} aktiv · {expired} abgelaufen",
   "card.refresh": "Aktualisieren",
   "card.refreshing": "Wird aktualisiert …",
   "card.last_poll": "Letzte erfolgreiche Abfrage",

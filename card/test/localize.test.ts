@@ -49,9 +49,21 @@ describe("localizer", () => {
 
   it("substitutes placeholders", () => {
     const t = createLocalizer(hass("de"));
-    expect(t("card.counts", { active: 3, expired: 1, local: 2 })).toBe(
-      "3 aktiv · 1 abgelaufen · 2 lokal",
+    expect(t("card.counts", { active: 3, expired: 1 })).toBe(
+      "3 aktiv · 1 abgelaufen",
     );
+  });
+
+  it("has no placeholder in the counts that the card does not fill", () => {
+    // The card passes exactly these two. A third one in the text does not
+    // fail anywhere — it simply renders as "{local}" in the header.
+    for (const language of Object.keys(TRANSLATIONS)) {
+      const t = createLocalizer(hass(language));
+      expect(
+        t("card.counts", { active: 3, expired: 1 }),
+        `${language} leaves a placeholder unfilled`,
+      ).not.toMatch(/\{\w+\}/);
+    }
   });
 
   it("leaves an unknown placeholder alone instead of blanking it", () => {

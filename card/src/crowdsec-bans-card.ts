@@ -329,7 +329,6 @@ export class CrowdSecBansCard extends LitElement {
         <div class="actions">
           ${this._instances.length > 1
             ? html`<select
-                .value=${this._entryId ?? ""}
                 @change=${(event: Event) => {
                   this._entryId = (event.target as HTMLSelectElement).value;
                   this._page = 0;
@@ -337,7 +336,10 @@ export class CrowdSecBansCard extends LitElement {
                 }}
               >
                 ${this._instances.map(
-                  (instance) => html`<option value=${instance.config_entry_id}>
+                  (instance) => html`<option
+                    value=${instance.config_entry_id}
+                    ?selected=${instance.config_entry_id === this._entryId}
+                  >
                     ${instance.title}
                   </option>`,
                 )}
