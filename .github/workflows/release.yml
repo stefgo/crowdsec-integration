@@ -12,7 +12,7 @@ jobs:
     name: Build and publish
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # HACS shows the tag, the integration reports the manifest version — if
       # the two drift apart, an update looks installed but is not. The card
