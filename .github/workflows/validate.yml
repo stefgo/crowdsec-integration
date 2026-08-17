@@ -76,6 +76,10 @@ jobs:
           cache: npm
           cache-dependency-path: card/package-lock.json
       - run: npm --prefix card ci
+      # The elements themselves have no unit tests — the card setup has no DOM
+      # environment — so without this a type error in them reaches CI only if
+      # it happens to break the bundler as well.
+      - run: npm --prefix card run typecheck
       - run: npm --prefix card test
       # The build is not committed, so a broken rollup config would otherwise
       # only surface during a release.

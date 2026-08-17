@@ -21,3 +21,12 @@ updates:
     groups:
       rollup:
         patterns: ["rollup", "@rollup/*"]
+    ignore:
+      # TypeScript 7 is the native port, and its JavaScript API no longer has
+      # the shape @rollup/plugin-typescript reads: the build dies with
+      # "Cannot read properties of undefined (reading 'ES2015')" while the
+      # plugin's peer range (">=3.7.0") happily lets the install through.
+      # Nothing on this side can fix that — drop this entry once the plugin
+      # supports TypeScript 7, so the major stops being proposed weekly.
+      - dependency-name: typescript
+        update-types: ["version-update:semver-major"]
