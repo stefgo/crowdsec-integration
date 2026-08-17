@@ -155,7 +155,7 @@ async def ws_decisions_list(
             "decisions": [row.as_dict() for row in page],
             "total": len(data.decisions),
             "offset": offset,
-            "available": data.decisions_available,
+            "available": data.decisions_ok,
             "reachable": data.reachable,
             "alerts_truncated": data.alerts_truncated,
             # The table itself hit the row cap — there are more decisions than
@@ -380,8 +380,39 @@ async def ws_ip_ban(
     await coordinator.async_request_refresh()
 
     # The fresh state comes straight back, so the card can show the result of
-    # the click without a second round trip.
-    decisions = await coordinator.client.async_lookup_ip(target)
-    alerts = await coordinator.client.async_lookup_alerts(target)
-    report = build_ip_report(target, decisions or [], alerts)
-    connection.send_result(msg["id"], report.as_dict())
+    # the click without a second round trip. Deliberately not allowed to fail
+    # the command: the ban has already been placed, and reporting an error for
+    # it because the read-back stumbled would tell the user the opposite of
+    # what happened. A missing answer is flagged the same way the lookup does
+    # it, so the card says "cannot tell" instead of guessing.
+    decisions, alerts = await asyncio.gather(
+        coordinator.client.async_lookup_ip(target),
+        coordinator.client.async_lookup_alerts(target),
+        return_exceptions=True,
+    )
+    for failure in (decisions, alerts):
+        if isinstance(failure, BaseException) and not isinstance(
+            failure, (CrowdSecAuthError, CrowdSecConnectionError)
+        ):
+            raise failure
+
+    decisions_available = not isinstance(decisions, BaseException)
+    alerts_available = not isinstance(alerts, BaseException)
+    if not decisions_available or not alerts_available:
+        _LOGGER.debug(
+            "Ban of %s succeeded, reading the state back did not (%s)",
+            target,
+            decisions if not decisions_available else alerts,
+        )
+
+    report = build_ip_report(
+        target,
+        (decisions or []) if decisions_available else [],
+        alerts if alerts_available else [],
+        alerts_available=alerts_available,
+    )
+    result = report.as_dict()
+    # ``None`` means the decision route itself is closed — as in the lookup,
+    # "not blocked" would be a lie there.
+    result["decisions_available"] = decisions_available and decisions is not None
+    connection.send_result(msg["id"], result)

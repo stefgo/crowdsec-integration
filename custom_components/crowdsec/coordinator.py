@@ -88,10 +88,22 @@ MAX_BAN_EVENTS_PER_CYCLE = 25
 class CrowdSecData:
     """Everything the entities need from one update cycle."""
 
+    # Whether the instance answered at all. The three queries are independent,
+    # so this is *not* "everything worked" — one route refusing while the
+    # others deliver says something about that route, not about the host being
+    # gone. What failed is listed in ``errors`` and drives ``problem``.
     reachable: bool = False
     errors: list[str] = field(default_factory=list)
     problem: bool = False
     problem_reasons: list[str] = field(default_factory=list)
+
+    # One flag per query. Every value below belongs to exactly one of them, and
+    # an entity goes unavailable when *its* source failed — not when any of the
+    # three did. Otherwise an alert timeout would blank the counters of a
+    # metrics scrape that ran perfectly well, tearing a hole into the
+    # statistics for a route they do not depend on.
+    metrics_ok: bool = False
+    alerts_ok: bool = False
 
     scrape_duration: float | None = None
     last_restart: datetime | None = None
@@ -104,9 +116,10 @@ class CrowdSecData:
     # The table behind the Lovelace card: active decisions enriched with the
     # alert details, plus the expired bans of the last 24 hours.
     decisions: list[DecisionRecord] = field(default_factory=list)
-    # Whether the decision list itself could be read. Without it the card only
-    # has the history and has to say so.
-    decisions_available: bool = False
+    # Whether the decision list itself could be read — the third query's flag.
+    # Without it the card only has the history and has to say so. No sensor
+    # hangs off this one; the table travels over the WebSocket.
+    decisions_ok: bool = False
     # Set when the table hit MAX_DECISION_ROWS — the card says so rather than
     # pretending the list it shows is the whole picture.
     decisions_truncated: bool = False
@@ -238,7 +251,10 @@ class CrowdSecCoordinator(DataUpdateCoordinator[CrowdSecData]):
         raw_decisions = self._unwrap(data, decisions_result, list)
 
         data.scrape_duration = round(monotonic() - started, 3)
-        data.reachable = not data.errors
+        # Both queries always produce a result object; ``None`` only ever comes
+        # out of _unwrap when the call failed.
+        data.metrics_ok = metrics is not None
+        data.alerts_ok = alerts is not None
 
         if metrics is not None:
             self.raw_metrics = metrics.as_dict(METRIC_PREFIX)
@@ -258,20 +274,29 @@ class CrowdSecCoordinator(DataUpdateCoordinator[CrowdSecData]):
             previous,
         )
 
-        now = datetime.now(UTC)
-        if data.reachable:
-            data.last_update = now
+        # The host answered as long as any one of the three came back. A single
+        # route refusing is a problem, not an outage — that distinction is the
+        # whole reason the flags above exist.
+        data.reachable = data.metrics_ok or data.alerts_ok or data.decisions_ok
+
+        if not data.errors:
+            # Deliberately the strict condition: "last update" is what an
+            # automation compares against to spot stale values, and a cycle
+            # that lost one of its three queries did not fully update.
+            data.last_update = datetime.now(UTC)
         else:
-            # Keep the timestamp of the last *successful* scrape — that is
-            # exactly how an automation recognises stale values.
             data.last_update = previous.last_update if previous else None
-            if previous is not None:
-                # These two timestamps deliberately survive an outage: they
-                # describe the past, not the current state.
-                if data.last_restart is None:
-                    data.last_restart = previous.last_restart
-                if data.last_alert is None:
-                    data.last_alert = previous.last_alert
+
+        if previous is not None:
+            # These two describe the past, not the current state, so a failed
+            # query carries the old value over rather than blanking it — but
+            # only the query that actually failed. With alerts intact, an empty
+            # window genuinely means "no alert in the last 24 hours" and has to
+            # be allowed to clear the timestamp.
+            if not data.metrics_ok and data.last_restart is None:
+                data.last_restart = previous.last_restart
+            if not data.alerts_ok and data.last_alert is None:
+                data.last_alert = previous.last_alert
 
         self._evaluate_problem(data)
         self._update_device_version(data)
@@ -468,7 +493,7 @@ class CrowdSecCoordinator(DataUpdateCoordinator[CrowdSecData]):
         enforces.
         """
         if raw_decisions is None:
-            data.decisions_available = False
+            data.decisions_ok = False
             # A failed decision query must not empty the table — the card would
             # then show "no bans" for an instance that is merely unreachable.
             data.decisions = previous.decisions if previous else []
@@ -477,7 +502,7 @@ class CrowdSecCoordinator(DataUpdateCoordinator[CrowdSecData]):
             )
             return
 
-        data.decisions_available = True
+        data.decisions_ok = True
         # The LAPI honours the origins filter on some versions and ignores it
         # on others, so the table filters again here. Without that a blocklist
         # entry could still surface in a card that promises local decisions.
@@ -609,8 +634,11 @@ class CrowdSecCoordinator(DataUpdateCoordinator[CrowdSecData]):
         """Set the aggregate flag for automations."""
         reasons: list[str] = []
 
-        if not data.reachable:
-            reasons.extend(data.errors)
+        # Unconditionally: now that ``reachable`` only says the instance
+        # answered at all, this flag is the one place a partial outage still
+        # surfaces. Tying it to ``reachable`` would let a permanently broken
+        # alert route pass unnoticed as long as the metrics kept coming.
+        reasons.extend(data.errors)
 
         if (
             data.parse_error_rate is not None

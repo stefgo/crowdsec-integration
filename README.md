@@ -437,9 +437,17 @@ logger:
 
 ## Behaviour during an outage
 
-If a scrape fails, the measured values go `unavailable` — they are deliberately
-**not** carried on with stale numbers. `Reachable`, `Status`, `Last update` and
-`Last restart` stay available and provide the context.
+If a query fails, the measured values that come from it go `unavailable` — they
+are deliberately **not** carried on with stale numbers. `Reachable`, `Status`,
+`Last update` and `Last restart` stay available and provide the context.
+
+Each cycle makes three independent requests, and a sensor only waits on the one
+its value actually comes from. If the alert query times out while the metrics
+endpoint answers, `New bans (24 h)` and the three `Top …` sensors go
+`unavailable` — but `Active decisions`, `Lines per minute` and the other
+metrics-derived values keep updating. `Reachable` stays on as long as the
+instance answers anywhere; that a route is stuck is reported by `Status`, whose
+`reasons` attribute names it.
 
 After a restart of the instance the rate sensors are suspended for one interval
 instead of reporting a negative jump from reset counters. `Last restart` then

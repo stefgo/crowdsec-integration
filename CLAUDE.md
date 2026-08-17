@@ -124,8 +124,19 @@ websocket / diagnostics.
   for cache busting. A missing build only logs a warning.
 - **Ban events** (`crowdsec_new_ban`) stay silent on the first cycle and are capped at
   `MAX_BAN_EVENTS_PER_CYCLE` (25); the remainder is deferred to later cycles, not dropped.
-- On a failed scrape the measured values go `unavailable` rather than being carried
-  forward; `last_update` / `last_restart` / `last_alert` deliberately survive.
+- **Availability is per query, not per cycle.** The three queries are independent, so
+  `CrowdSecData` carries one flag each (`metrics_ok`, `alerts_ok`, `decisions_ok`) and
+  every sensor description names its source via `source_fn`; a sensor goes `unavailable`
+  only when *its* query failed. Letting a stuttering alert route blank the counters of a
+  successful metrics scrape put gaps into the recorder for data that was never in doubt.
+  No sensor reads `decisions_ok` — the table travels over the WebSocket.
+  `reachable` therefore means "the instance answered at all" (any of the three), which is
+  what a connectivity device class is about; a single failed route surfaces through
+  `errors` and the `problem` flag, which lists them unconditionally. `last_update` keeps
+  the strict condition (`not errors`), since that is what an automation compares against
+  to spot stale values. `last_restart` / `last_alert` are carried over from the previous
+  cycle only when *their* query failed — a working alert query with an empty window has
+  to be able to clear the timestamp.
 
 ### Cards
 

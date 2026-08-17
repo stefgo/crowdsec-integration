@@ -30,12 +30,27 @@ UNIT_PER_MINUTE = "1/min"
 UNIT_LINES = "lines"
 
 
+def _from_metrics(data: CrowdSecData) -> bool:
+    """Values read off the Prometheus endpoint."""
+    return data.metrics_ok
+
+
+def _from_alerts(data: CrowdSecData) -> bool:
+    """Values derived from the LAPI alert window."""
+    return data.alerts_ok
+
+
 @dataclass(frozen=True, kw_only=True)
 class CrowdSecSensorDescription(SensorEntityDescription):
     """Description with a value and an attribute function."""
 
     value_fn: Callable[[CrowdSecData], float | int | str | datetime | None]
     attrs_fn: Callable[[CrowdSecData], dict[str, Any]] | None = None
+    # Which of the coordinator's queries the value comes from. A cycle can lose
+    # one of them and keep the others, so a sensor waits on its own source
+    # instead of on the cycle as a whole. Most values come off the metrics
+    # endpoint, so that is the default; the alert-derived ones say so.
+    source_fn: Callable[[CrowdSecData], bool] = _from_metrics
     # Timestamps stay valid even when a scrape fails.
     survives_outage: bool = False
 
@@ -84,6 +99,7 @@ SENSORS: tuple[CrowdSecSensorDescription, ...] = (
         translation_key="new_bans_24h",
         icon="mdi:gavel",
         state_class=SensorStateClass.MEASUREMENT,
+        source_fn=_from_alerts,
         value_fn=lambda data: data.new_bans_24h,
         attrs_fn=lambda data: {
             "alerts_24h": data.alerts_24h,
@@ -96,6 +112,7 @@ SENSORS: tuple[CrowdSecSensorDescription, ...] = (
         translation_key="unique_attackers_24h",
         icon="mdi:account-multiple-outline",
         state_class=SensorStateClass.MEASUREMENT,
+        source_fn=_from_alerts,
         value_fn=lambda data: data.unique_attackers_24h,
         attrs_fn=lambda data: {
             "banned": data.banned_attackers_24h,
@@ -106,6 +123,7 @@ SENSORS: tuple[CrowdSecSensorDescription, ...] = (
         key="top_scenario_24h",
         translation_key="top_scenario_24h",
         icon="mdi:target",
+        source_fn=_from_alerts,
         value_fn=lambda data: data.top_scenario,
         attrs_fn=lambda data: {"top_scenarios": data.top_scenarios},
     ),
@@ -113,6 +131,7 @@ SENSORS: tuple[CrowdSecSensorDescription, ...] = (
         key="top_country_24h",
         translation_key="top_country_24h",
         icon="mdi:earth",
+        source_fn=_from_alerts,
         value_fn=lambda data: data.top_country,
         attrs_fn=lambda data: {"top_countries": data.top_countries},
     ),
@@ -120,6 +139,7 @@ SENSORS: tuple[CrowdSecSensorDescription, ...] = (
         key="top_attacker_24h",
         translation_key="top_attacker_24h",
         icon="mdi:crosshairs-gps",
+        source_fn=_from_alerts,
         value_fn=lambda data: data.top_attacker,
         attrs_fn=lambda data: {"top_attackers": data.top_attackers},
     ),
@@ -128,6 +148,7 @@ SENSORS: tuple[CrowdSecSensorDescription, ...] = (
         translation_key="last_alert",
         device_class=SensorDeviceClass.TIMESTAMP,
         icon="mdi:clock-alert-outline",
+        source_fn=_from_alerts,
         survives_outage=True,
         value_fn=lambda data: data.last_alert,
     ),
@@ -203,15 +224,20 @@ class CrowdSecSensor(CrowdSecEntity, SensorEntity):
     def available(self) -> bool:
         """Diagnostic values stay available, measured values do not.
 
-        When a scrape fails, counters and rates must not live on with stale
-        values — "Last update" and "Last restart" should, because that is
-        exactly when they provide the context.
+        When a query fails, the counters and rates *it* feeds must not live on
+        with stale values — "Last update" and "Last restart" should, because
+        that is exactly when they provide the context.
+
+        Deliberately per source rather than per cycle: the three queries are
+        independent, and letting a stuttering alert route blank the numbers of
+        a metrics scrape that succeeded would put gaps into the recorder's
+        statistics for data that was never in doubt.
         """
         if self.coordinator.data is None:
             return False
         if self.entity_description.survives_outage:
             return True
-        return self.coordinator.data.reachable
+        return self.entity_description.source_fn(self.coordinator.data)
 
     @property
     def native_value(self) -> float | int | str | datetime | None:

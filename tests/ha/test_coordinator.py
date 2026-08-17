@@ -49,10 +49,16 @@ async def test_a_single_denied_route_keeps_the_entry_alive(
 
     data = await refresh(hass, coordinator)
 
-    assert data.reachable is False
+    # The instance answered — one route refusing is a problem, not an outage.
+    assert data.reachable is True
+    assert data.metrics_ok is True
+    assert data.alerts_ok is False
     assert any("denied here" in message for message in data.errors)
     # The metrics still came through, so their values are there.
     assert data.version == "v1.6.3"
+    # ...but it must not pass unnoticed either.
+    assert data.problem is True
+    assert any("denied here" in reason for reason in data.problem_reasons)
 
 
 async def test_a_connection_error_becomes_a_message_not_an_exception(
@@ -63,8 +69,11 @@ async def test_a_connection_error_becomes_a_message_not_an_exception(
 
     data = await refresh(hass, coordinator)
 
-    assert data.reachable is False
     assert data.errors == ["timeout"]
+    assert data.decisions_ok is False
+    # The other two queries carried the cycle, so the host is not gone.
+    assert data.reachable is True
+    assert data.problem is True
 
 
 async def test_an_unexpected_error_is_not_swallowed(hass, loaded_entry, fake_client):
@@ -88,7 +97,7 @@ async def test_a_failed_decision_query_keeps_the_previous_table(
     fake_client.decisions_error = CrowdSecConnectionError("gone")
     second = await refresh(hass, coordinator)
 
-    assert second.decisions_available is False
+    assert second.decisions_ok is False
     assert len(second.decisions) == 1
 
 
@@ -329,7 +338,7 @@ async def test_the_parse_error_rate_raises_the_problem_flag(
     assert any("Parse error rate" in reason for reason in data.problem_reasons)
 
 
-async def test_an_unreachable_instance_is_a_problem(hass, loaded_entry, fake_client):
+async def test_a_failed_query_is_a_problem(hass, loaded_entry, fake_client):
     coordinator = loaded_entry.runtime_data
     fake_client.metrics_error = CrowdSecConnectionError("down")
 
@@ -337,3 +346,120 @@ async def test_an_unreachable_instance_is_a_problem(hass, loaded_entry, fake_cli
 
     assert data.problem is True
     assert "down" in data.problem_reasons
+
+
+async def test_an_instance_that_answers_nowhere_is_unreachable(
+    hass, loaded_entry, fake_client
+):
+    """All three gone is the one case the connectivity flag is about."""
+    coordinator = loaded_entry.runtime_data
+    fake_client.metrics_error = CrowdSecConnectionError("down")
+    fake_client.alerts_error = CrowdSecConnectionError("down")
+    fake_client.decisions_error = CrowdSecConnectionError("down")
+
+    data = await refresh(hass, coordinator)
+
+    assert data.reachable is False
+    assert data.problem is True
+
+
+# -- Availability follows the source, not the cycle -------------------------
+
+# The values each query feeds, as entity IDs.
+METRICS_SENSORS = (
+    "sensor.crowdsec_active_decisions",
+    "sensor.crowdsec_active_buckets",
+    "sensor.crowdsec_lines_per_minute",
+    "sensor.crowdsec_parse_error_rate",
+    "sensor.crowdsec_bouncer_queries_per_minute",
+)
+ALERT_SENSORS = (
+    "sensor.crowdsec_new_bans_24h",
+    "sensor.crowdsec_unique_attackers_24h",
+    "sensor.crowdsec_top_scenario_24h",
+    "sensor.crowdsec_top_country_24h",
+    "sensor.crowdsec_top_attacker_24h",
+)
+
+
+def states_of(hass, entity_ids):
+    return {entity_id: hass.states.get(entity_id).state for entity_id in entity_ids}
+
+
+async def test_a_failing_alert_query_leaves_the_metrics_alone(
+    hass, loaded_entry, fake_client
+):
+    """The regression this whole split is about.
+
+    A stuttering alert route used to blank the counters of a metrics scrape
+    that had just succeeded — a gap in the recorder's statistics for data that
+    was never in doubt.
+    """
+    coordinator = loaded_entry.runtime_data
+    fake_client.alerts = [make_alert(1)]
+    # A second cycle first: the rates need two measurements before they carry a
+    # value, and comparing against "unknown" would prove nothing.
+    await refresh(hass, coordinator)
+    before = states_of(hass, METRICS_SENSORS)
+    assert "unavailable" not in before.values()
+
+    fake_client.alerts_error = CrowdSecConnectionError("alerts down")
+    await refresh(hass, coordinator)
+
+    assert states_of(hass, METRICS_SENSORS) == before
+    assert all(
+        state == "unavailable" for state in states_of(hass, ALERT_SENSORS).values()
+    )
+
+
+async def test_a_failing_metrics_scrape_leaves_the_alert_numbers_alone(
+    hass, loaded_entry, fake_client
+):
+    coordinator = loaded_entry.runtime_data
+    fake_client.alerts = [make_alert(1)]
+    await refresh(hass, coordinator)
+    before = states_of(hass, ALERT_SENSORS)
+
+    fake_client.metrics_error = CrowdSecConnectionError("metrics down")
+    await refresh(hass, coordinator)
+
+    assert states_of(hass, ALERT_SENSORS) == before
+    assert all(
+        state == "unavailable" for state in states_of(hass, METRICS_SENSORS).values()
+    )
+
+
+async def test_a_failing_decision_query_touches_no_sensor_at_all(
+    hass, loaded_entry, fake_client
+):
+    """No sensor reads the decision list — the table goes over the WebSocket."""
+    coordinator = loaded_entry.runtime_data
+    fake_client.alerts = [make_alert(1)]
+    await refresh(hass, coordinator)
+    before = states_of(hass, METRICS_SENSORS + ALERT_SENSORS)
+
+    fake_client.decisions_error = CrowdSecConnectionError("decisions down")
+    await refresh(hass, coordinator)
+
+    assert states_of(hass, METRICS_SENSORS + ALERT_SENSORS) == before
+
+
+async def test_the_alert_window_may_empty_out_while_the_query_works(
+    hass, loaded_entry, fake_client
+):
+    """A working query with nothing in it has to be able to clear the value.
+
+    Only a *failed* query carries the old timestamp over. Otherwise an alert
+    ageing out of the 24 h window would leave "Last alert" frozen for good.
+    """
+    coordinator = loaded_entry.runtime_data
+    fake_client.alerts = [make_alert(1)]
+    good = await refresh(hass, coordinator)
+    assert good.last_alert is not None
+
+    fake_client.alerts = []
+    coordinator.request_full_alert_poll()
+    empty = await refresh(hass, coordinator)
+
+    assert empty.alerts_ok is True
+    assert empty.last_alert is None

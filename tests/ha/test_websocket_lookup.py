@@ -259,3 +259,47 @@ async def test_a_non_admin_cannot_ban(
     assert not result["success"]
     assert result["error"]["code"] == "unauthorized"
     assert fake_client.bans == []
+
+
+async def test_a_placed_ban_is_not_reported_as_a_failure(ws, loaded_entry, fake_client):
+    """The read-back is a courtesy, not the result of the command.
+
+    The ban is already in the LAPI by the time the card is told about it. If
+    reading the state back stumbles, saying "request_failed" would tell the
+    user the exact opposite of what happened.
+    """
+    fake_client.lookup_error = CrowdSecConnectionError("lapi went away")
+
+    result = await send(
+        ws,
+        {
+            "type": WS_IP_BAN,
+            "config_entry_id": loaded_entry.entry_id,
+            "ip": "192.0.2.55",
+        },
+    )
+
+    assert result["success"]
+    assert fake_client.bans[0][0] == "192.0.2.55"
+    # "not blocked" would be a guess — the card says "cannot tell" instead.
+    assert result["result"]["decisions_available"] is False
+
+
+async def test_a_ban_survives_a_failing_alert_read_back(ws, loaded_entry, fake_client):
+    """The history is context; losing it must not lose the decisions with it."""
+    fake_client.lookup_decisions = [make_decision(1, ip="192.0.2.55")]
+    fake_client.lookup_alerts_error = CrowdSecConnectionError("alerts down")
+
+    result = await send(
+        ws,
+        {
+            "type": WS_IP_BAN,
+            "config_entry_id": loaded_entry.entry_id,
+            "ip": "192.0.2.55",
+        },
+    )
+
+    assert result["success"]
+    assert result["result"]["blocked"] is True
+    assert result["result"]["decisions_available"] is True
+    assert result["result"]["alerts_available"] is False
