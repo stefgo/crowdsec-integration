@@ -1,22 +1,155 @@
 # CrowdSec for Home Assistant
 
+[![Release](https://img.shields.io/github/v/release/stefgo/ha-crowdsec-integration?style=flat-square)](https://github.com/stefgo/ha-crowdsec-integration/releases)
+[![HACS: custom](https://img.shields.io/badge/HACS-custom-41BDF5?style=flat-square)](https://hacs.xyz/)
+[![Home Assistant 2025.2+](https://img.shields.io/badge/Home%20Assistant-2025.2%2B-41BDF5?style=flat-square)](https://www.home-assistant.io/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue?style=flat-square)](LICENSE)
+
 Custom integration that maps one or more CrowdSec instances into Home
 Assistant — reachability, attack volume, throughput and enforcement.
 
 Every instance is created as its own device; the integration can be added as
-often as you like.
+often as you like. Two Lovelace cards come with it: a table of everything
+CrowdSec is currently enforcing, with search, filters and one-click unban, and
+a lookup that answers whether one particular address is blocked.
+
+![The ban card: search field, status chips and the table of local decisions with
+country, network operator, origin, remaining time and the unban
+action](screenshots/crowdsec-bans-card.png)
+
+![The lookup card: the verdict for an address, the decisions in force, the last
+24 hours from the alerts and the ban/unban
+controls](screenshots/crowdsec-ip-lookup-card.png)
+
+## Contents
+
+* [Requirements](#requirements)
+* [Installation](#installation)
+* [Configuration](#configuration)
+* [Entities per instance](#entities-per-instance)
+* [Lovelace card: bans with search, filters and unban](#lovelace-card-bans-with-search-filters-and-unban)
+* [Lookup card: is this address blocked?](#lookup-card-is-this-address-blocked)
+* [Automation](#automation)
+* [Operation](#operation)
+* [Troubleshooting](#troubleshooting)
+* [Development](#development)
+* [License](#license)
+
+## Requirements
+
+**Home Assistant 2025.2 or newer.** The integration itself has no Python
+dependencies; it talks to CrowdSec over HTTP, so the instance only has to be
+reachable from Home Assistant.
+
+On the CrowdSec side, three things:
+
+1. **Enable the Prometheus endpoint** in `/etc/crowdsec/config.yaml`:
+
+   ```yaml
+   prometheus:
+     enabled: true
+     level: full          # "full" is needed for lines/min and parse errors
+     listen_addr: 0.0.0.0 # or the address Home Assistant can reach
+     listen_port: 6060
+   ```
+
+   With `level: aggregated` the parser metrics are missing; `Lines per minute`
+   and `Parse error rate` then stay empty.
+
+2. **Create machine credentials** for the LAPI:
+
+   ```bash
+   sudo cscli machines add homeassistant --password '<password>'
+   ```
+
+   They are needed for `/v1/alerts` (New bans 24h, Top scenario) and for
+   `/v1/decisions`, which is the list behind the card's table and behind the
+   lookup.
+
+3. **Optional: a bouncer API key**:
+
+   ```bash
+   sudo cscli bouncers add homeassistant
+   ```
+
+   The machine credentials already cover the decision list. The key is only a
+   fallback for CrowdSec versions that serve `/v1/decisions` to bouncers alone;
+   if neither path works, the card's table stays empty. The `Active decisions`
+   sensor is not affected either way — it always reads the
+   `cs_active_decisions` metric.
+
+## Installation
+
+**HACS:** add the repository as a custom repository of type *Integration*,
+install it, restart Home Assistant.
+
+**Manually:** copy `custom_components/crowdsec/` to
+`<config>/custom_components/` and restart Home Assistant.
+
+Then go to *Settings → Devices & services → Add integration → CrowdSec*.
+
+What changed between versions is listed in [CHANGELOG.md](CHANGELOG.md); the
+same text is on the release page of each version.
+
+## Configuration
+
+The setup dialog asks for:
+
+| Field | Example |
+| --- | --- |
+| Name | `CrowdSec Edge` |
+| Metrics URL | `http://10.0.0.5:6060/metrics` |
+| LAPI URL | `http://10.0.0.5:8080` |
+| Machine ID / password | from `cscli machines add` |
+| Bouncer API key | optional, from `cscli bouncers add` |
+| Verify SSL | turn off for self-signed certificates |
+
+Addresses and credentials can be changed later under *Reconfigure*; leaving
+the password or the bouncer key empty keeps the stored one.
+
+### Options
+
+Everything below sits behind *Configure* on the integration entry and can be
+changed while it runs.
+
+| Option | Default | What it does |
+| --- | --- | --- |
+| Polling interval | 60 s | How often a cycle runs. The three queries of a cycle run in parallel, so their timeouts do not add up. |
+| Request timeout | 15 s | Applies **per request**. Must be lower than the polling interval, otherwise cycles would overlap. For an instance behind a VPN or a slow proxy a higher value helps. |
+| Parse error threshold | 5 % | Above this, `Status` turns on — the log format no longer matches the parser. |
+| Intervals without bouncer queries before a problem | 5 | How many cycles without a single bouncer query are tolerated before `Status` turns on. |
+| Alerts per query (24h) | 1000 | Size of a single alert query. If it is hit, the time window is split and queried again, so the 24h numbers stay complete. Very high values slow down every cycle. |
+| Full alert refresh | 300 s | How often the whole 24h window is refetched. Must not be shorter than the polling interval. See below. |
+
+### How much the instance is asked for
+
+**Full alert refresh** is the one setting for it, and it does not slow down how
+quickly a new ban is noticed: the 24h numbers come from a window the
+integration keeps itself, refetched in full on this interval, while every cycle
+only asks for the minutes since the last one and merges the result in.
+Refetching 24 hours every minute transfers the same alerts over and over, and
+with the window splitting described under
+[Completeness of the 24h numbers](#completeness-of-the-24h-numbers) that can be
+sixteen requests per cycle.
+
+The decision query is restricted to local origins and needs no setting. An
+instance subscribed to a blocklist enforces hundreds of thousands of decisions
+that no click can change; `Active decisions` keeps counting all of them through
+the `cs_active_decisions` metric, and the lookup card answers any question
+about a specific address. The table stops at 2000 rows and says so when it
+does.
 
 ## Entities per instance
 
 | Entity | Type | Source |
 | --- | --- | --- |
-| Reachable | `binary_sensor` (connectivity) | success of the scrape |
-| Status | `binary_sensor` (problem) | aggregate flag, see below |
-| Scrape duration | sensor, s (diagnostic) | measured duration of both queries |
+| Reachable | `binary_sensor` (connectivity) | the instance answered on at least one of the three queries |
+| Status | `binary_sensor` (problem) | aggregate flag, [see below](#when-status-turns-on) |
+| Scrape duration | sensor, s (diagnostic) | measured duration of the cycle — the three queries run in parallel |
 | Last restart | sensor, timestamp | `process_start_time_seconds` |
-| Last update | sensor, timestamp | last **successful** scrape |
+| Last update | sensor, timestamp | last scrape in which **no** query failed |
 | Last alert | sensor, timestamp | most recent alert of the last 24 h |
-| Active decisions | sensor | `/v1/decisions` or `cs_active_decisions` |
+| Active decisions | sensor | `cs_active_decisions` — counts every origin, including CAPI and blocklists |
 | New bans 24h | sensor | `/v1/alerts?since=24h` |
 | Unique attackers 24h | sensor | distinct source IPs of the same alerts |
 | Top scenario 24h | sensor, text | most frequent scenario of the same alerts |
@@ -39,54 +172,6 @@ the start of the service and is reset on a restart — Home Assistant absorbs
 that and yields usable daily and weekly sums, which the instantaneous
 `Lines per minute` cannot provide.
 
-## Services
-
-| Service | Effect |
-| --- | --- |
-| `crowdsec.ban_ip` | creates a ban decision (`ip`, `duration`, `reason`) |
-| `crowdsec.unban_ip` | deletes all decisions for an `ip` |
-| `crowdsec.refresh` | polls immediately instead of waiting for the interval |
-
-All three expect the instance as `config_entry_id`. `ip` takes a single address
-or a CIDR range, `duration` the cscli format (`30m`, `4h`, `1d`). After a ban
-and an unban the integration refreshes the values by itself.
-
-```yaml
-action:
-  - service: crowdsec.ban_ip
-    data:
-      config_entry_id: "{{ config_entry_id('binary_sensor.crowdsec_edge_reachable') }}"
-      ip: 192.0.2.10
-      duration: 24h
-      reason: Failed attempts on the reverse proxy
-```
-
-## Event on a new ban
-
-For every newly detected ban the integration fires `crowdsec_new_ban` with
-`ip`, `scenario`, `country`, `as_name`, `duration`, `scope`, `value`,
-`created_at`, `alert_id` as well as `entry_id`/`instance`.
-
-The first cycle after a start stays silent — otherwise the bans of the last 24
-hours would be dumped all at once. If more than 25 bans occur in one interval,
-the integration only reports the 25 most recent ones and writes the rest to the
-log.
-
-```yaml
-automation:
-  - alias: CrowdSec banned someone
-    trigger:
-      - platform: event
-        event_type: crowdsec_new_ban
-    action:
-      - service: notify.persistent_notification
-        data:
-          message: >-
-            {{ trigger.event.data.ip }} ({{ trigger.event.data.country }})
-            banned for {{ trigger.event.data.duration }}
-            because of {{ trigger.event.data.scenario }}
-```
-
 ## Lovelace card: bans with search, filters and unban
 
 The integration ships a card that shows every decision CrowdSec is currently
@@ -94,10 +179,6 @@ enforcing, together with the bans of the last 24 hours that have already run
 out. It is served by the integration itself — no Lovelace resource has to be
 added by hand. After the update it appears in the card picker as **CrowdSec
 Bans** (`custom:crowdsec-bans-card`).
-
-![The ban card: search field, status chips and the table of local decisions with
-country, network operator, origin, remaining time and the unban
-action](screenshots/crowdsec-bans-card.png)
 
 | Column | Source |
 | --- | --- |
@@ -175,7 +256,7 @@ hide_filters: false
 One behaviour is not a card option but an *integration* option, because it
 decides what is fetched in the first place: **Full alert refresh** governs how
 current the expired 24 h history is. The active decisions come from the polling
-cycle either way. See [Configuration](#configuration).
+cycle either way. See [Options](#options).
 
 ## Lookup card: is this address blocked?
 
@@ -186,10 +267,6 @@ address finds nothing, and the address is blocked all the same.
 
 The second card asks that question directly. It appears in the card picker as
 **CrowdSec IP Lookup** (`custom:crowdsec-ip-lookup-card`).
-
-![The lookup card: the verdict for an address, the decisions in force, the last
-24 hours from the alerts and the ban/unban
-controls](screenshots/crowdsec-ip-lookup-card.png)
 
 Type an address or a CIDR range, press *Check*, and the card asks the LAPI with
 `contains`, which is exactly the "what covers this" lookup. The answer is one
@@ -244,7 +321,57 @@ ban_reason: Blocked from Home Assistant
 hide_ban: false
 ```
 
-## Push and badge on iOS/iPadOS
+## Automation
+
+### Services
+
+| Service | Effect |
+| --- | --- |
+| `crowdsec.ban_ip` | creates a ban decision (`ip`, `duration`, `reason`) |
+| `crowdsec.unban_ip` | deletes all decisions for an `ip` |
+| `crowdsec.refresh` | polls immediately instead of waiting for the interval |
+
+All three expect the instance as `config_entry_id`. `ip` takes a single address
+or a CIDR range, `duration` the cscli format (`30m`, `4h`, `1d`). After a ban
+and an unban the integration refreshes the values by itself.
+
+```yaml
+action:
+  - action: crowdsec.ban_ip
+    data:
+      config_entry_id: "{{ config_entry_id('binary_sensor.crowdsec_edge_reachable') }}"
+      ip: 192.0.2.10
+      duration: 24h
+      reason: Failed attempts on the reverse proxy
+```
+
+### Event on a new ban
+
+For every newly detected ban the integration fires `crowdsec_new_ban` with
+`ip`, `scenario`, `country`, `as_name`, `duration`, `scope`, `value`,
+`created_at`, `alert_id` as well as `entry_id`/`instance`.
+
+The first cycle after a start stays silent — otherwise the bans of the last 24
+hours would be dumped all at once. If more than 25 bans occur in one interval,
+the integration only reports the 25 most recent ones and writes the rest to the
+log.
+
+```yaml
+automation:
+  - alias: CrowdSec banned someone
+    trigger:
+      - platform: event
+        event_type: crowdsec_new_ban
+    action:
+      - action: notify.persistent_notification
+        data:
+          message: >-
+            {{ trigger.event.data.ip }} ({{ trigger.event.data.country }})
+            banned for {{ trigger.event.data.duration }}
+            because of {{ trigger.event.data.scenario }}
+```
+
+### Push and badge on iOS/iPadOS
 
 A ready-made package for the Home Assistant companion app is available at
 [`examples/ios_push_badge.yaml`](examples/ios_push_badge.yaml). It sends a push
@@ -276,106 +403,9 @@ To adjust before use: the service name of the companion app in the notify group
 (`mobile_app_iphone`) and the entity IDs, if the instance is not called
 `crowdsec`.
 
-## Requirements on the CrowdSec side
+## Operation
 
-1. **Enable the Prometheus endpoint** in `/etc/crowdsec/config.yaml`:
-
-   ```yaml
-   prometheus:
-     enabled: true
-     level: full          # "full" is needed for lines/min and parse errors
-     listen_addr: 0.0.0.0 # or the address Home Assistant can reach
-     listen_port: 6060
-   ```
-
-   With `level: aggregated` the parser metrics are missing; `Lines per minute`
-   and `Parse error rate` then stay empty.
-
-2. **Create machine credentials** for the LAPI:
-
-   ```bash
-   sudo cscli machines add homeassistant --password '<password>'
-   ```
-
-   They are needed for `/v1/alerts` (New bans 24h, Top scenario) and for
-   `/v1/decisions` — the list behind the card and the exact decision count.
-
-3. **Optional: a bouncer API key**:
-
-   ```bash
-   sudo cscli bouncers add homeassistant
-   ```
-
-   The machine credentials already cover the decision list. The key is only a
-   fallback for CrowdSec versions that serve `/v1/decisions` to bouncers alone;
-   if neither path works, the `cs_active_decisions` metric takes over, which
-   knows the count but no details and therefore leaves the card's table empty.
-
-## Installation
-
-**HACS:** add the repository as a custom repository of type *Integration*,
-install it, restart Home Assistant.
-
-**Manually:** copy `custom_components/crowdsec/` to
-`<config>/custom_components/` and restart Home Assistant.
-
-Then go to *Settings → Devices & services → Add integration → CrowdSec*.
-
-What changed between versions is listed in [CHANGELOG.md](CHANGELOG.md); the
-same text is on the release page of each version.
-
-## Configuration
-
-| Field | Example |
-| --- | --- |
-| Name | `CrowdSec Edge` |
-| Metrics URL | `http://10.0.0.5:6060/metrics` |
-| LAPI URL | `http://10.0.0.5:8080` |
-| Machine ID / password | from `cscli machines add` |
-| Bouncer API key | optional, from `cscli bouncers add` |
-| Verify SSL | turn off for self-signed certificates |
-
-Under *Configure* you can adjust the polling interval (default 60 s), the
-timeout per request (15 s), the threshold for the parse error rate (5 %), the
-number of intervals without bouncer queries before a problem is raised (5),
-the number of alerts per query (1000) and how often the whole 24h alert window
-is refetched (300 s). The
-timeout applies per request and has to be lower than the polling interval —
-for an instance behind a VPN or a slow proxy a higher value helps. The three
-queries of a cycle run in parallel, so the timeouts do not add up.
-
-Addresses and credentials can be changed later under *Reconfigure*; leaving
-the password or the bouncer key empty keeps the stored one.
-
-### How much the instance is asked for
-
-**Full alert refresh** is the one setting for it, and it does not slow down how
-quickly a new ban is noticed: the 24h numbers come from a window the
-integration keeps itself, refetched in full on this interval, while every cycle
-only asks for the minutes since the last one and merges the result in.
-Refetching 24 hours every minute transfers the same alerts over and over, and
-with the window splitting below that can be sixteen requests per cycle.
-
-The decision query is restricted to local origins and needs no setting. An
-instance subscribed to a blocklist enforces hundreds of thousands of decisions
-that no click can change; `Active decisions` keeps counting all of them through
-the `cs_active_decisions` metric, and the lookup card answers any question
-about a specific address. The table stops at 2000 rows and says so when it
-does.
-
-### Completeness of the 24h numbers
-
-The LAPI has no pagination: it truncates at the requested number. When that
-happens, the integration halves the time window and queries the halves
-separately — up to four levels deep. The 24h numbers therefore stay complete
-even with tens of thousands of alerts, without every query having to be huge.
-
-If even that is not enough — more alerts in a single minute than one query
-returns — a repair issue appears under *Settings → System → Repairs*, and
-`New bans 24h` carries `truncated: true`. Only a higher number of alerts per
-query helps then.
-
-## When "Status" turns on
+### When "Status" turns on
 
 * the instance is unreachable
 * the parse error rate is above the threshold — the log format no longer
@@ -395,47 +425,13 @@ automation:
         to: "on"
         for: "00:05:00"
     action:
-      - service: notify.persistent_notification
+      - action: notify.persistent_notification
         data:
           message: >-
             CrowdSec: {{ state_attr('binary_sensor.crowdsec_edge_status', 'reasons') | join(', ') }}
 ```
 
-## Troubleshooting the setup
-
-The config flow names the rejected access path individually — metrics endpoint,
-LAPI login and bouncer key are reported separately. To reproduce it on the
-command line:
-
-```bash
-curl -si http://<host>:6060/metrics | head -1
-curl -si -X POST http://<host>:8080/v1/watchers/login \
-  -H 'Content-Type: application/json' \
-  -d '{"machine_id":"<id>","password":"<password>"}'
-```
-
-If `/v1/decisions` answers with a **404**, that is not an error: not every
-CrowdSec version returns an empty array there. The integration then tries the
-bouncer key and finally falls back to `cs_active_decisions`. Only in that last
-case does the card's table stay empty — the metric knows the count, not the
-decisions.
-
-If the LAPI reports `incorrect Username or Password` on login although the same
-credentials work via curl, it is worth looking at the user agent: CrowdSec
-reads it, stores it as the version of the machine (`cscli machines list`) and
-expects the format `name/version`. The integration therefore sends its own
-(`hass-crowdsec/…`) instead of the composite one from Home Assistant. You can
-reproduce that with `curl -A`.
-
-Detailed logging:
-
-```yaml
-logger:
-  logs:
-    custom_components.crowdsec: debug
-```
-
-## Behaviour during an outage
+### Behaviour during an outage
 
 If a query fails, the measured values that come from it go `unavailable` — they
 are deliberately **not** carried on with stale numbers. `Reachable`, `Status`,
@@ -453,14 +449,62 @@ After a restart of the instance the rate sensors are suspended for one interval
 instead of reporting a negative jump from reset counters. `Last restart` then
 shows the new point in time.
 
-## Diagnostics
+### Completeness of the 24h numbers
+
+The LAPI has no pagination: it truncates at the requested number. When that
+happens, the integration halves the time window and queries the halves
+separately — up to four levels deep. The 24h numbers therefore stay complete
+even with tens of thousands of alerts, without every query having to be huge.
+
+If even that is not enough — more alerts in a single minute than one query
+returns — a repair issue appears under *Settings → System → Repairs*, and
+`New bans 24h` carries `truncated: true`. Only a higher number of alerts per
+query helps then.
+
+### Diagnostics
 
 *Download diagnostics* on the device gives you the redacted configuration, the
 latest data and the raw `cs_*` metrics of the instance. Credentials and
 attacker IPs are replaced while the counts are preserved — so the report can be
 attached to an issue.
 
-## Building the card
+## Troubleshooting
+
+The config flow names the rejected access path individually — metrics endpoint,
+LAPI login and bouncer key are reported separately. To reproduce it on the
+command line:
+
+```bash
+curl -si http://<host>:6060/metrics | head -1
+curl -si -X POST http://<host>:8080/v1/watchers/login \
+  -H 'Content-Type: application/json' \
+  -d '{"machine_id":"<id>","password":"<password>"}'
+```
+
+If `/v1/decisions` answers with a **404**, that is not an error: not every
+CrowdSec version returns an empty array there. The integration then tries the
+bouncer key. Only if that fails too does the card's table stay empty — the
+`Active decisions` sensor is unaffected, because it reads the
+`cs_active_decisions` metric in every case.
+
+If the LAPI reports `incorrect Username or Password` on login although the same
+credentials work via curl, it is worth looking at the user agent: CrowdSec
+reads it, stores it as the version of the machine (`cscli machines list`) and
+expects the format `name/version`. The integration therefore sends its own
+(`hass-crowdsec/…`) instead of the composite one from Home Assistant. You can
+reproduce that with `curl -A`.
+
+Detailed logging:
+
+```yaml
+logger:
+  logs:
+    custom_components.crowdsec: debug
+```
+
+## Development
+
+### Building the card
 
 The card is written in TypeScript and is **not** committed in built form. HACS
 installs get it from the release zip; for a checkout it has to be built once:
@@ -473,7 +517,7 @@ npm --prefix card run build   # writes custom_components/crowdsec/www/
 Without that file the integration starts normally and only logs a warning —
 everything except the card works.
 
-## Tests
+### Tests
 
 ```bash
 pip install -r requirements_test.txt
@@ -508,6 +552,23 @@ translations — German and English have to carry the same keys and the same
 placeholders. CI additionally runs `ruff`, `mypy`, `hassfest` and the HACS
 validation (see
 [.github/workflows/validate.yml](.github/workflows/validate.yml)).
+
+### WebSocket commands
+
+The cards do not read their data from entity attributes — a ban table would
+blow past the attribute size limit and end up in the recorder. They use these
+commands instead, all of them admin-only:
+
+| Command | Purpose |
+| --- | --- |
+| `crowdsec/instances` | the configured instances, for the picker in the card header |
+| `crowdsec/decisions/list` | the table: local decisions merged with the alert history |
+| `crowdsec/decisions/delete` | unban, by decision id or for a whole address |
+| `crowdsec/ip/lookup` | the live lookup for one address, every origin included |
+| `crowdsec/ip/ban` | ban an address from the lookup card |
+
+They exist for the two cards that ship here and are **not** a stable public
+API — the shape of the answers can change with any release.
 
 ## License
 
