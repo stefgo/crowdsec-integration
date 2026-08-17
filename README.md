@@ -95,6 +95,10 @@ out. It is served by the integration itself — no Lovelace resource has to be
 added by hand. After the update it appears in the card picker as **CrowdSec
 Bans** (`custom:crowdsec-bans-card`).
 
+![The ban card: search field, status chips and the table of local decisions with
+country, network operator, origin, remaining time and the unban
+action](screenshots/crowdsec-bans-card.png)
+
 | Column | Source |
 | --- | --- |
 | Address | `value` of the decision, IP or CIDR range |
@@ -182,6 +186,10 @@ address finds nothing, and the address is blocked all the same.
 
 The second card asks that question directly. It appears in the card picker as
 **CrowdSec IP Lookup** (`custom:crowdsec-ip-lookup-card`).
+
+![The lookup card: the verdict for an address, the decisions in force, the last
+24 hours from the alerts and the ban/unban
+controls](screenshots/crowdsec-ip-lookup-card.png)
 
 Type an address or a CIDR range, press *Check*, and the card asks the LAPI with
 `contains`, which is exactly the "what covers this" lookup. The answer is one
