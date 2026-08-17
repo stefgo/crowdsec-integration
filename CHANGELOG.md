@@ -8,6 +8,32 @@ The section headings have to match the release tags: the release workflow
 reads the section for the tag it was started with and refuses to publish
 without one.
 
+## [1.3.1] – 2026-08-17
+
+### Fixed
+
+- The card announced itself as version 1.0.0 in the browser console no matter
+  which release it shipped in. The number was a second, hand-maintained copy
+  that had drifted three releases behind the package it labelled. It is now
+  taken from `card/package.json` when the bundle is built — the copy the
+  release workflow already checks against the tag — so it cannot go stale
+  again. Nothing but the console line changes; the integration itself is
+  identical to 1.3.0.
+
+### Internal
+
+- The card is type-checked in CI. The job ran the tests and the bundle but
+  never `tsc`, and the elements themselves have no unit tests, so a type error
+  in them was only caught when it happened to break the bundler as well.
+- TypeScript 7 is held back: it is the native port, and its JavaScript API no
+  longer has the shape `@rollup/plugin-typescript` reads. A weekly probe
+  builds the card against TypeScript 7 and opens an issue if it ever succeeds,
+  so the hold has a way of ending other than somebody remembering it
+  (see [rollup/plugins#2016](https://github.com/rollup/plugins/issues/2016)).
+- Dependency updates: vitest 4, the rollup plugin group, and the GitHub
+  Actions to their current majors, which clears the Node 20 deprecation
+  warning from every workflow run.
+
 ## [1.3.0] – 2026-08-17
 
 ### Changed
@@ -149,7 +175,8 @@ without one.
   sensors for the Prometheus metrics, a problem indicator, services and an
   event on a new ban.
 
-[unreleased]: https://github.com/stefgo/ha-crowdsec-integration/compare/v1.3.0...HEAD
+[unreleased]: https://github.com/stefgo/ha-crowdsec-integration/compare/v1.3.1...HEAD
+[1.3.1]: https://github.com/stefgo/ha-crowdsec-integration/releases/tag/v1.3.1
 [1.3.0]: https://github.com/stefgo/ha-crowdsec-integration/releases/tag/v1.3.0
 [1.2.0]: https://github.com/stefgo/ha-crowdsec-integration/releases/tag/v1.2.0
 [1.1.0]: https://github.com/stefgo/ha-crowdsec-integration/releases/tag/v1.1.0
