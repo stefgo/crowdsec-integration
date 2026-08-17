@@ -47,8 +47,6 @@ import type {
   SortColumn,
 } from "./types";
 
-const CARD_VERSION = "1.0.0";
-
 const DEFAULT_PAGE_SIZE = 25;
 
 const STATUS_OPTIONS: (DecisionStatus | "all")[] = ["active", "expired", "all"];
