@@ -26,7 +26,13 @@ updates:
       # the shape @rollup/plugin-typescript reads: the build dies with
       # "Cannot read properties of undefined (reading 'ES2015')" while the
       # plugin's peer range (">=3.7.0") happily lets the install through.
-      # Nothing on this side can fix that — drop this entry once the plugin
-      # supports TypeScript 7, so the major stops being proposed weekly.
+      # Tracked upstream in https://github.com/rollup/plugins/issues/2016 —
+      # drop this entry once that is closed, so the major stops being
+      # proposed weekly until then.
+      #
+      # Deliberately 7.x only and not every major: TypeScript 6 builds this
+      # card fine (checked against 6.0.3 — typecheck, bundle and tests all
+      # pass), and blocking it would hold the card a major behind for a
+      # problem it does not have.
       - dependency-name: typescript
-        update-types: ["version-update:semver-major"]
+        versions: ["7.x"]
