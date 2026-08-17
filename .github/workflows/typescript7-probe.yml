@@ -1,0 +1,105 @@
+name: TypeScript 7 probe
+
+# @rollup/plugin-typescript 12.3.0 cannot build with TypeScript 7: it reads
+# `ts.ModuleKind` at module scope, and the native port no longer exposes that
+# from the package root, so the bundle dies with "Cannot read properties of
+# undefined (reading 'ES2015')". .github/dependabot.yml therefore holds
+# typescript at 7.x. This job watches for the day that hold can come off.
+# Upstream: https://github.com/rollup/plugins/issues/2016
+#
+# It stays quiet while the answer is still "no": a job that reports red every
+# Monday is a job nobody reads after the third week. Only the build turning
+# green produces anything — an issue saying so. Silence therefore means "still
+# broken", and a red run means the probe itself is broken, which is worth
+# seeing. Type-checking already passes under TypeScript 7; the plugin is the
+# only thing in the way, so the build is what decides.
+
+on:
+  schedule:
+    - cron: "0 7 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  probe:
+    name: Can the card build with TypeScript 7?
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: card/package-lock.json
+
+      # These two are ordinary steps on purpose: if the install itself breaks,
+      # the job goes red rather than passing the failure off as "TypeScript 7
+      # still does not work". Only the build below may fail quietly.
+      - run: npm --prefix card ci
+      - name: Install TypeScript 7 over the pinned version
+        run: npm --prefix card install --no-save --no-package-lock typescript@7
+
+      - name: Try to build with it
+        id: probe
+        run: |
+          version=$(node -p "require('./card/node_modules/typescript/package.json').version")
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Probing with TypeScript $version"
+
+          if npm --prefix card run build; then
+            echo "build=ok" >> "$GITHUB_OUTPUT"
+          else
+            echo "build=failed" >> "$GITHUB_OUTPUT"
+          fi
+
+          # Reported alongside, not decisive: a type error here would be ours
+          # to fix and says nothing about the plugin.
+          if npm --prefix card run typecheck; then
+            echo "typecheck=ok" >> "$GITHUB_OUTPUT"
+          else
+            echo "typecheck=failed" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Say so, once, when it works
+        if: steps.probe.outputs.build == 'ok'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TS_VERSION: ${{ steps.probe.outputs.version }}
+          TYPECHECK: ${{ steps.probe.outputs.typecheck }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          title="TypeScript 7 builds the card again — the dependabot hold can come off"
+
+          # Once, not once a week: the probe keeps succeeding until somebody
+          # acts on it.
+          if gh issue list --state open --search "in:title $title" \
+               --json title --jq '.[].title' | grep -qxF "$title"; then
+            echo "Issue is already open, nothing to add."
+            exit 0
+          fi
+
+          cat > "$RUNNER_TEMP/issue.md" <<MARKDOWN
+          The weekly probe built the card with TypeScript \`$TS_VERSION\`, so
+          \`@rollup/plugin-typescript\` evidently handles the native port now.
+
+          - Bundle: built
+          - Type check: \`$TYPECHECK\`
+          - Probe run: $RUN_URL
+
+          To act on it:
+
+          1. Drop the \`typescript\` entry under \`ignore:\` in
+             \`.github/dependabot.yml\` — dependabot will then offer the major
+             on its next run.
+          2. Delete \`.github/workflows/typescript7-probe.yml\`; it has done
+             its job.
+          3. Check upstream https://github.com/rollup/plugins/issues/2016 for
+             what changed, in case the fix comes with caveats.
+
+          Raised automatically by \`.github/workflows/typescript7-probe.yml\`.
+          MARKDOWN
+
+          gh issue create --title "$title" --body-file "$RUNNER_TEMP/issue.md"
